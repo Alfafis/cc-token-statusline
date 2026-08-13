@@ -25,6 +25,7 @@ import re
 import shutil
 import sys
 import tempfile
+from datetime import datetime, timezone
 
 # Assistant entries repeat in the transcript - the same request shows up once per
 # streamed content block, each copy carrying the full usage object. Summing them
@@ -39,11 +40,17 @@ COLD_START_TAIL = 8 * 1024 * 1024
 # Bounded so the cache file cannot grow without limit in a very long session.
 MAX_SEEN_IDS = 50_000
 
-DEFAULT_SEGMENTS = ("ctx", "cost", "tok", "cache", "sub", "lines", "api")
-ALL_SEGMENTS = DEFAULT_SEGMENTS + ("limits",)
+DEFAULT_SEGMENTS = ("ctx", "quota", "cost", "tok", "cache", "sub", "lines", "api")
+ALL_SEGMENTS = DEFAULT_SEGMENTS
+SEGMENT_ALIASES = {"limits": "quota"}
 
-# Rendered left to right; dropped right to left when the terminal is too narrow.
-SEGMENT_PRIORITY = ("api", "lines", "limits", "sub", "cache", "tok", "cost", "ctx")
+# Dropped in this order when the badge does not fit. `cache` outranks `tok`
+# because a hit rate is actionable and a running total is just a scoreboard;
+# `ctx` and `quota` answer "can I keep going", so they die last.
+SEGMENT_PRIORITY = ("api", "lines", "sub", "tok", "cache", "cost", "quota", "ctx")
+
+# Below this, the reset time is not worth the width it costs.
+QUOTA_ALERT_PCT = 70.0
 
 SEP = "·"
 
@@ -301,7 +308,7 @@ def seg_ctx(payload: dict, totals: dict | None) -> str:
         return ""
     if pct is None:
         pct = used / size * 100
-    body = f"ctx {fmt_tokens(used)}/{fmt_tokens(size)} {pct:.0f}%"
+    body = f"token {fmt_tokens(used)}/{fmt_tokens(size)} {pct:.0f}%"
     return paint(body, pct_color(float(pct)))
 
 
@@ -323,7 +330,7 @@ def seg_tok(payload: dict, totals: dict | None) -> str:
     if not billed_in and not totals["output"]:
         return ""
     mark = "~" if totals.get("partial") else ""
-    body = f"{mark}↑{fmt_tokens(billed_in)} ↓{fmt_tokens(totals['output'])}"
+    body = f"gasto {mark}↑{fmt_tokens(billed_in)} ↓{fmt_tokens(totals['output'])}"
     return paint(body, C_GRAY)
 
 
@@ -374,11 +381,38 @@ def seg_api(payload: dict, totals: dict | None) -> str:
     return paint(f"api {fmt_duration(float(ms))}", C_GRAY)
 
 
-def seg_limits(payload: dict, totals: dict | None) -> str:
+def parse_reset(value) -> datetime | None:
+    """`resets_at` type is not documented - accept ISO 8601, epoch s and epoch ms."""
+    if value is None:
+        return None
+    try:
+        text = str(value).strip()
+        if not text:
+            return None
+        if isinstance(value, (int, float)) or text.replace(".", "", 1).isdigit():
+            stamp = float(value if isinstance(value, (int, float)) else text)
+            # No plausible reset is 5000 years out, so a value that large is ms.
+            if stamp > 1e11:
+                stamp /= 1000.0
+            return datetime.fromtimestamp(stamp, timezone.utc)
+        if text.endswith(("Z", "z")):
+            text = text[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    except (ValueError, OverflowError, OSError):
+        return None
+
+
+def seg_quota(payload: dict, totals: dict | None) -> str:
     limits = payload.get("rate_limits")
     if not isinstance(limits, dict):
         return ""
-    parts = []
+
+    # Only the tighter of the two windows is shown - the one with room to spare
+    # is dead weight on a line where every column is contested.
+    worst = None
     for key, label in (("five_hour", "5h"), ("seven_day", "7d")):
         entry = limits.get(key)
         if not isinstance(entry, dict):
@@ -386,8 +420,21 @@ def seg_limits(payload: dict, totals: dict | None) -> str:
         pct = entry.get("used_percentage")
         if pct is None:
             continue
-        parts.append(paint(f"{label} {float(pct):.0f}%", pct_color(float(pct))))
-    return " ".join(parts)
+        pct = float(pct)
+        if worst is None or pct > worst[0]:
+            worst = (pct, label, entry.get("resets_at"))
+    if worst is None:
+        return ""
+
+    pct, label, resets_at = worst
+    body = f"cota {label} {pct:.0f}%"
+    if pct >= QUOTA_ALERT_PCT:
+        reset = parse_reset(resets_at)
+        if reset is not None:
+            remaining = (reset - datetime.now(timezone.utc)).total_seconds()
+            if remaining > 0:
+                body += f" ~{fmt_duration(remaining * 1000)}"
+    return paint(body, pct_color(pct))
 
 
 RENDERERS = {
@@ -398,7 +445,7 @@ RENDERERS = {
     "sub": seg_sub,
     "lines": seg_lines,
     "api": seg_api,
-    "limits": seg_limits,
+    "quota": seg_quota,
 }
 
 
@@ -407,6 +454,7 @@ def selected_segments() -> list[str]:
     if not raw:
         return list(DEFAULT_SEGMENTS)
     names = [name.strip() for name in raw.split(",") if name.strip()]
+    names = [SEGMENT_ALIASES.get(name, name) for name in names]
     return [name for name in names if name in ALL_SEGMENTS]
 
 
@@ -422,8 +470,14 @@ def available_width() -> int:
 
 
 def join(parts: list[str]) -> str:
+    """Join segments and wrap them in one bracket - never an empty `[]`."""
+    if not parts:
+        return ""
     glue = f" {paint(SEP, C_DIM)} " if use_color() else f" {SEP} "
-    return glue.join(parts)
+    inner = glue.join(parts)
+    if not use_color():
+        return f"[{inner}]"
+    return f"{C_DIM}[{C_RESET}{inner}{C_DIM}]{C_RESET}"
 
 
 def build(payload: dict) -> str:

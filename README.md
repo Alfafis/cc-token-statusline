@@ -3,19 +3,33 @@
 Status line badge for Claude Code showing what a session is actually costing:
 
 ```
-ctx 57k/1M 6% · $1.23 · ↑1.9M ↓28k · cache 97% · sub 120k · +230/-14 · api 1m12s
+[token 93k/1M 9% · cota 5h 34% · $1.23 · gasto ↑2.4M ↓33k · cache 97% · sub 120k · +230/-14 · api 1m12s]
 ```
 
-| Segment | Meaning | Source |
-| --- | --- | --- |
-| `ctx` | context window used / size, colored by pressure | status line payload |
-| `$` | session cost so far (hidden when the payload reports 0) | status line payload |
-| `↑ ↓` | cumulative billed input / output tokens for the session | transcript |
-| `cache` | share of billed input served from cache — higher is better | transcript |
-| `sub` | tokens spent by subagents (sidechain entries) | transcript |
-| `+ -` | lines added / removed | status line payload |
-| `api` | time spent waiting on the API | status line payload |
-| `limits` | 5-hour and 7-day rate limit usage (off by default) | status line payload |
+| Key | Label | Meaning | Source |
+| --- | --- | --- | --- |
+| `ctx` | `token` | context window used / size, colored by pressure | payload |
+| `quota` | `cota` | account rate limit — the tighter of the 5h / 7d windows | payload |
+| `cost` | `$` | session cost so far (hidden when the payload reports 0) | payload |
+| `tok` | `gasto` | cumulative billed input / output tokens for the session | transcript |
+| `cache` | `cache` | share of billed input served from cache — higher is better | transcript |
+| `sub` | `sub` | tokens spent by subagents (sidechain entries) | transcript |
+| `lines` | `+ -` | lines added / removed | payload |
+| `api` | `api` | time spent waiting on the API | payload |
+
+Keys are the stable identifiers used in `CC_TOKENS_SEGMENTS`; labels are only
+what gets printed. `limits` is accepted as an alias for `quota`.
+
+`cota` shows one window, not two: the one with room to spare is dead weight on a
+contested line. Once a window crosses 70% the reset time is appended, since
+that is the only actionable fact at that point:
+
+```
+[token 780k/1M 78% · cota 7d 82% ~2h11m · $4.10 · cache 71%]
+```
+
+The segment disappears entirely when the payload carries no `rate_limits`
+(API-key accounts do not have them).
 
 ## Install
 
@@ -47,15 +61,21 @@ All via environment variables (settable in the `env` block of `settings.json`):
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `CC_TOKENS_SEGMENTS` | `ctx,cost,tok,cache,sub,lines,api` | which segments, in order. Add `limits` for rate limit usage. |
+| `CC_TOKENS_SEGMENTS` | `ctx,quota,cost,tok,cache,sub,lines,api` | which segments, in order |
 | `CC_TOKENS_WIDTH` | terminal width − reserve | hard cap on badge width |
 | `CC_TOKENS_RESERVE` | `34` | columns left for other badges |
 | `CC_TOKENS_COLOR` | `1` | `0` disables color (`NO_COLOR` works too) |
 | `CC_TOKENS_PYTHON` | autodetected | explicit python3 path |
 | `CC_TOKENS_DEBUG` | unset | raise errors instead of printing nothing |
 
-When the badge does not fit, segments are dropped from the least useful end:
-`api`, `lines`, `limits`, `sub`, `cache`, `tok`, `cost`, `ctx`.
+When the badge does not fit, segments are dropped in this order:
+
+```
+api → lines → sub → tok → cache → cost → quota → ctx
+```
+
+`cache` outranks `tok` on purpose — a hit rate is actionable, a running total is
+a scoreboard. `ctx` and `quota` answer "can I keep going", so they die last.
 
 ## Full breakdown
 
