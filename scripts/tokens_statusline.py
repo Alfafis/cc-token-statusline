@@ -40,8 +40,11 @@ COLD_START_TAIL = 8 * 1024 * 1024
 # Bounded so the cache file cannot grow without limit in a very long session.
 MAX_SEEN_IDS = 50_000
 
-DEFAULT_SEGMENTS = ("ctx", "quota", "cost", "tok", "cache", "sub", "lines", "api")
-ALL_SEGMENTS = DEFAULT_SEGMENTS
+# `cost` is implemented but off by default: on subscription plans it reports 0,
+# and the columns it costs buy both quota windows instead - the quota is what
+# actually limits the day. Add it back through CC_TOKENS_SEGMENTS.
+DEFAULT_SEGMENTS = ("ctx", "quota", "tok", "cache", "sub", "lines", "api")
+ALL_SEGMENTS = DEFAULT_SEGMENTS + ("cost",)
 SEGMENT_ALIASES = {"limits": "quota"}
 
 # Dropped in this order when the badge does not fit. `cache` outranks `tok`
@@ -410,9 +413,10 @@ def seg_quota(payload: dict, totals: dict | None) -> str:
     if not isinstance(limits, dict):
         return ""
 
-    # Only the tighter of the two windows is shown - the one with room to spare
-    # is dead weight on a line where every column is contested.
-    worst = None
+    # Both windows are shown, each colored on its own: they expire on different
+    # clocks, so the one with room to spare still tells you which limit is the
+    # real ceiling today.
+    windows = []
     for key, label in (("five_hour", "5h"), ("seven_day", "7d")):
         entry = limits.get(key)
         if not isinstance(entry, dict):
@@ -420,21 +424,25 @@ def seg_quota(payload: dict, totals: dict | None) -> str:
         pct = entry.get("used_percentage")
         if pct is None:
             continue
-        pct = float(pct)
-        if worst is None or pct > worst[0]:
-            worst = (pct, label, entry.get("resets_at"))
-    if worst is None:
+        windows.append((float(pct), label, entry.get("resets_at")))
+    if not windows:
         return ""
 
-    pct, label, resets_at = worst
-    body = f"cota {label} {pct:.0f}%"
-    if pct >= QUOTA_ALERT_PCT:
+    body = paint("cota", C_GRAY) + " " + " ".join(
+        paint(f"{label} {pct:.0f}%", pct_color(pct)) for pct, label, _ in windows
+    )
+
+    # One reset time at most, for whichever window is actually tight.
+    worst_pct, _, resets_at = max(windows, key=lambda window: window[0])
+    if worst_pct >= QUOTA_ALERT_PCT:
         reset = parse_reset(resets_at)
         if reset is not None:
             remaining = (reset - datetime.now(timezone.utc)).total_seconds()
             if remaining > 0:
-                body += f" ~{fmt_duration(remaining * 1000)}"
-    return paint(body, pct_color(pct))
+                body += paint(
+                    f" ~{fmt_duration(remaining * 1000)}", pct_color(worst_pct)
+                )
+    return body
 
 
 RENDERERS = {

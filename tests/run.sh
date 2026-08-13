@@ -143,13 +143,17 @@ echo "rendering"
 out=$(badge "$(payload "$FIXTURE" 93000 9.3 34 12 r1)")
 contains "wrapped in one bracket"   "[token 93k/1M 9% ·" "$out"
 contains "ends with bracket"        "api 1m12s]"         "$out"
-contains "quota shows tighter window" "cota 5h 34%"      "$out"
-lacks    "quota hides slack window"   "7d"               "$out"
+contains "quota shows both windows" "cota 5h 34% 7d 12%" "$out"
 lacks    "no reset while quota is low" "~"               "$out"
+lacks    "cost is off by default"      "1.23"            "$out"
+
+out=$(badge "$(payload "$FIXTURE" 93000 9.3 34 12 r1b)" CC_TOKENS_SEGMENTS=ctx,cost)
+contains "cost still available on request" "\$1.23" "$out"
 
 out=$(badge "$(payload "$FIXTURE" 780000 78 41 82 r2)")
-contains "quota switches to worse window" "cota 7d 82%" "$out"
-contains "reset appended past 70%"        "~2h1"        "$out"
+contains "both windows kept when one is tight" "cota 5h 41% 7d 82%" "$out"
+contains "one reset, for the tight window"     "~2h1"               "$out"
+check    "only one reset shown" "1" "$(printf '%s' "$out" | tr -cd '~' | wc -c | tr -d ' ')"
 
 out=$(badge "$(payload "$FIXTURE" 93000 9.3 -1 -1 r3)")
 lacks "quota absent without rate_limits" "cota" "$out"

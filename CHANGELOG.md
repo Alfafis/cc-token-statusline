@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0
+
+- `cota` now shows both rate limit windows (5h and 7d), each colored on its own
+  clock, with a single reset time appended for whichever one is tight.
+- `cost` moved out of the default segments. It reports 0 on subscription plans
+  in some setups, and the columns pay for the second quota window instead. Still
+  available through `CC_TOKENS_SEGMENTS`.
+
 ## 0.1.0
 
 First release.

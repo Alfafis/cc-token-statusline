@@ -5,33 +5,39 @@
 Status line badge for Claude Code showing what a session is actually costing:
 
 ```
-[token 93k/1M 9% · cota 5h 34% · $1.23 · gasto ↑2.4M ↓33k · cache 97% · sub 120k · +230/-14 · api 1m12s]
+[token 93k/1M 9% · cota 5h 34% 7d 12% · gasto ↑2.4M ↓33k · cache 97% · sub 120k · +230/-14 · api 1m12s]
 ```
 
 | Key | Label | Meaning | Source |
 | --- | --- | --- | --- |
 | `ctx` | `token` | context window used / size, colored by pressure | payload |
-| `quota` | `cota` | account rate limit — the tighter of the 5h / 7d windows | payload |
-| `cost` | `$` | session cost so far (hidden when the payload reports 0) | payload |
+| `quota` | `cota` | account rate limits, 5h and 7d windows | payload |
 | `tok` | `gasto` | cumulative billed input / output tokens for the session | transcript |
 | `cache` | `cache` | share of billed input served from cache — higher is better | transcript |
 | `sub` | `sub` | tokens spent by subagents (sidechain entries) | transcript |
 | `lines` | `+ -` | lines added / removed | payload |
 | `api` | `api` | time spent waiting on the API | payload |
+| `cost` | `$` | session cost — **off by default**, see below | payload |
 
 Keys are the stable identifiers used in `CC_TOKENS_SEGMENTS`; labels are only
 what gets printed. `limits` is accepted as an alias for `quota`.
 
-`cota` shows one window, not two: the one with room to spare is dead weight on a
-contested line. Once a window crosses 70% the reset time is appended, since
-that is the only actionable fact at that point:
+`cota` is the account rate limit, not a per-session budget: both windows are
+account-wide, shared across every session and machine, and neither resets when
+you start a new session. Each window is colored on its own clock. Once either
+crosses 70%, the reset time for the tight one is appended — the only actionable
+fact at that point:
 
 ```
-[token 780k/1M 78% · cota 7d 82% ~2h11m · $4.10 · cache 71%]
+[token 780k/1M 78% · cota 5h 41% 7d 82% ~2h11m · gasto ↑2.4M ↓33k · cache 71%]
 ```
 
 The segment disappears entirely when the payload carries no `rate_limits`
 (API-key accounts do not have them).
+
+`cost` is off by default. It reports 0 on subscription plans in some setups, and
+the columns it takes are better spent on both quota windows — the quota is what
+actually limits the day. Turn it on with `CC_TOKENS_SEGMENTS`.
 
 ## Install
 
@@ -76,7 +82,7 @@ All via environment variables (settable in the `env` block of `settings.json`):
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `CC_TOKENS_SEGMENTS` | `ctx,quota,cost,tok,cache,sub,lines,api` | which segments, in order |
+| `CC_TOKENS_SEGMENTS` | `ctx,quota,tok,cache,sub,lines,api` | which segments, in order. Add `cost` for the dollar figure. |
 | `CC_TOKENS_WIDTH` | terminal width − reserve | hard cap on badge width |
 | `CC_TOKENS_RESERVE` | `34` | columns left for other badges |
 | `CC_TOKENS_COLOR` | `1` | `0` disables color (`NO_COLOR` works too) |
@@ -140,8 +146,9 @@ mode printing nothing with exit 0. It runs against a throwaway
 
 ## Limitations
 
-* `total_cost_usd` is 0 on subscription plans in some setups; the cost segment
-  hides itself rather than showing a permanent `$0.00`.
+* `total_cost_usd` is 0 on subscription plans in some setups. The `cost` segment
+  is off by default for that reason, and hides itself rather than showing a
+  permanent `$0.00` when enabled.
 * The cache directory grows one small file per session and is never pruned.
 * The status line runs a copy under `~/.claude/hooks`, not the plugin's own
   files — a plugin path carries a version hash and would break on every update.
