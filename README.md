@@ -1,5 +1,7 @@
 # cc-token-statusline
 
+[![tests](https://github.com/Alfafis/cc-token-statusline/actions/workflows/ci.yml/badge.svg)](https://github.com/Alfafis/cc-token-statusline/actions/workflows/ci.yml)
+
 Status line badge for Claude Code showing what a session is actually costing:
 
 ```
@@ -32,6 +34,19 @@ The segment disappears entirely when the payload carries no `rate_limits`
 (API-key accounts do not have them).
 
 ## Install
+
+As a plugin:
+
+```
+/plugin marketplace add Alfafis/cc-token-statusline
+/plugin install cc-token-statusline@cc-token-statusline
+```
+
+Installing the plugin is not enough on its own. Claude Code reads `statusLine`
+only from `settings.json`, and no plugin can register one — so the first session
+after install offers to run the wiring for you. Say yes once and it is done.
+
+Standalone, or to do the wiring yourself:
 
 ```bash
 ./install.sh
@@ -106,6 +121,22 @@ Cold start on a transcript over 32 MB reads only the last 8 MB and marks the
 token segment with `~` — the totals are then a floor, not a total.
 
 Any error prints nothing and exits 0. A non-zero exit hides the whole status bar.
+
+## Development
+
+```
+.claude-plugin/     plugin and marketplace manifests
+scripts/            the badge: a bash entry point and the python that renders it
+hooks/              SessionStart hook that offers the one-time wiring
+commands/           /token-report
+tests/              ./tests/run.sh — no dependencies beyond python3
+```
+
+`./tests/run.sh` covers the parts that are easy to get quietly wrong:
+deduplication, incremental parsing against a one-shot parse, resuming from a
+half-written line, quota window selection, width trimming, and every failure
+mode printing nothing with exit 0. It runs against a throwaway
+`CLAUDE_CONFIG_DIR`, so the real cache is untouched.
 
 ## Limitations
 

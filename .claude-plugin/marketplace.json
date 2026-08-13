@@ -1,0 +1,35 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "cc-token-statusline",
+  "description": "Status line badge for Claude Code showing context window usage, account quota, session cost, cache hit rate and subagent token spend.",
+  "owner": {
+    "name": "Alfafis",
+    "url": "https://github.com/Alfafis"
+  },
+  "plugins": [
+    {
+      "name": "cc-token-statusline",
+      "displayName": "Token Status Line",
+      "description": "Status line badge with context window usage, 5h/7d quota, session cost, cumulative tokens, cache hit rate, subagent token spend, edited lines and API time.",
+      "source": "./",
+      "category": "productivity",
+      "repository": "https://github.com/Alfafis/cc-token-statusline",
+      "license": "MIT",
+      "author": {
+        "name": "Alfafis",
+        "url": "https://github.com/Alfafis"
+      },
+      "keywords": [
+        "statusline",
+        "tokens",
+        "cost",
+        "context-window",
+        "quota",
+        "rate-limits",
+        "cache",
+        "usage",
+        "observability"
+      ]
+    }
+  ]
+}

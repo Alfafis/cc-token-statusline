@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/setup-check.sh\"",
+            "timeout": 5,
+            "statusMessage": "Checking token status line..."
+          }
+        ]
+      }
+    ]
+  }
+}

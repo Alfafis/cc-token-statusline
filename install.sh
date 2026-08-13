@@ -24,7 +24,7 @@ command -v python3 >/dev/null 2>&1 || {
 }
 
 mkdir -p "$HOOKS_DIR"
-cp "$SELF_DIR/hooks/$BADGE" "$HOOKS_DIR/$BADGE"
+cp "$SELF_DIR/scripts/$BADGE" "$HOOKS_DIR/$BADGE"
 cp "$SELF_DIR/scripts/tokens_statusline.py" "$HOOKS_DIR/tokens_statusline.py"
 chmod +x "$HOOKS_DIR/$BADGE"
 echo "installed: $HOOKS_DIR/$BADGE"

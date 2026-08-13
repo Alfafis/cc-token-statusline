@@ -7,6 +7,8 @@
     "name": "Alfafis",
     "url": "https://github.com/Alfafis"
   },
+  "homepage": "https://github.com/Alfafis/cc-token-statusline",
+  "repository": "https://github.com/Alfafis/cc-token-statusline",
   "license": "MIT",
   "keywords": ["statusline", "tokens", "cost", "context-window", "cache", "usage"]
 }
