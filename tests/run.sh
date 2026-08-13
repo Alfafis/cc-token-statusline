@@ -177,6 +177,34 @@ check "empty payload prints no bare brackets" ":0" "$out"
 out=$(badge '{"session_id":"missing","transcript_path":"/nope/does-not-exist.jsonl","context_window":{"total_input_tokens":100,"context_window_size":1000,"used_percentage":10},"cost":{}}')
 check "missing transcript still renders context" "[token 100/1k 10%]" "$out"
 
+echo "setup hook"
+
+HOOK="$ROOT/hooks/setup-check.sh"
+HOOK_DIR="$WORK/hookcfg"
+mkdir -p "$HOOK_DIR/hooks"
+
+out=$(CLAUDE_CONFIG_DIR="$HOOK_DIR" CLAUDE_PLUGIN_ROOT="$ROOT" bash "$HOOK")
+contains "nudges when not wired" "not wired up yet" "$out"
+if printf '%s' "$out" | python3 -c "import json,sys;json.load(sys.stdin)" 2>/dev/null; then
+  ok "nudge is valid json"
+else
+  no "nudge is valid json" "parses" "$out"
+fi
+
+printf '{"statusLine":{"command":"bash ~/.claude/hooks/tokens-statusline.sh"}}' > "$HOOK_DIR/settings.json"
+cp "$ROOT/scripts/tokens_statusline.py" "$HOOK_DIR/hooks/tokens_statusline.py"
+out=$(CLAUDE_CONFIG_DIR="$HOOK_DIR" CLAUDE_PLUGIN_ROOT="$ROOT" bash "$HOOK")
+check "silent once wired and current" "" "$out"
+
+# `plugin update` refreshes the plugin but not the copy the status line runs.
+printf '# stale\n' >> "$HOOK_DIR/hooks/tokens_statusline.py"
+out=$(CLAUDE_CONFIG_DIR="$HOOK_DIR" CLAUDE_PLUGIN_ROOT="$ROOT" bash "$HOOK")
+contains "warns when the installed copy drifts" "was updated but the copy" "$out"
+
+touch "$HOOK_DIR/.cc-token-statusline-skip"
+out=$(CLAUDE_CONFIG_DIR="$HOOK_DIR" CLAUDE_PLUGIN_ROOT="$ROOT" bash "$HOOK")
+check "skip marker silences everything" "" "$out"
+
 echo "shell syntax"
 for script in "$ROOT/scripts/tokens-statusline.sh" "$ROOT/hooks/setup-check.sh" "$ROOT/install.sh"; do
   if bash -n "$script" 2>/dev/null; then ok "syntax $(basename "$script")"; else no "syntax $(basename "$script")" "parses" "error"; fi

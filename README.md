@@ -143,6 +143,10 @@ mode printing nothing with exit 0. It runs against a throwaway
 * `total_cost_usd` is 0 on subscription plans in some setups; the cost segment
   hides itself rather than showing a permanent `$0.00`.
 * The cache directory grows one small file per session and is never pruned.
+* The status line runs a copy under `~/.claude/hooks`, not the plugin's own
+  files — a plugin path carries a version hash and would break on every update.
+  So `plugin update` does not reach the badge; the SessionStart hook notices the
+  drift and offers to re-run `install.sh`.
 * Terminal width is read from `COLUMNS`, or from `/dev/tty` when the wrapper can
   reach it, and falls back to 80 columns otherwise — a wide terminal may drop
   segments it had room for. Set `CC_TOKENS_WIDTH` to pin it.
