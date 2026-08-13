@@ -16,3 +16,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./tests/run.sh
+
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: curl -fsSL https://claude.ai/install.sh | bash
+      - name: Validate manifests
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          claude plugin validate --strict .
+          claude plugin validate --strict .claude-plugin/plugin.json
