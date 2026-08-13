@@ -5,7 +5,7 @@
 Status line badge for Claude Code showing what a session is actually costing:
 
 ```
-[token 93k/1M 9% · cota 5h 34% 7d 12% · gasto ↑2.4M ↓33k · cache 97% · sub 120k · +230/-14 · api 1m12s]
+[token 93k/1M 9% · cota 5h 34% │ 7d 12% · gasto ↑2.4M ↓33k · cache 97% · sub 120k · +230/-14 · api 1m12s]
 ```
 
 | Key | Label | Meaning | Source |
@@ -24,12 +24,14 @@ what gets printed. `limits` is accepted as an alias for `quota`.
 
 `cota` is the account rate limit, not a per-session budget: both windows are
 account-wide, shared across every session and machine, and neither resets when
-you start a new session. Each window is colored on its own clock. Once either
+you start a new session. Each window is colored on its own clock, and they are
+split by `│` rather than the `·` used between segments — same segment, two
+readings. Once either
 crosses 70%, the reset time for the tight one is appended — the only actionable
 fact at that point:
 
 ```
-[token 780k/1M 78% · cota 5h 41% 7d 82% ~2h11m · gasto ↑2.4M ↓33k · cache 71%]
+[token 780k/1M 78% · cota 5h 41% │ 7d 82% ~2h11m · gasto ↑2.4M ↓33k · cache 71%]
 ```
 
 The segment disappears entirely when the payload carries no `rate_limits`

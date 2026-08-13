@@ -56,6 +56,9 @@ SEGMENT_PRIORITY = ("api", "lines", "sub", "tok", "cache", "cost", "quota", "ctx
 QUOTA_ALERT_PCT = 70.0
 
 SEP = "·"
+# Deliberately not SEP: the two quota windows belong to one segment, and reusing
+# the segment separator would read as two.
+QUOTA_SEP = "│"
 
 C_RESET = "\033[0m"
 C_DIM = "\033[2m"
@@ -428,7 +431,8 @@ def seg_quota(payload: dict, totals: dict | None) -> str:
     if not windows:
         return ""
 
-    body = paint("cota", C_GRAY) + " " + " ".join(
+    glue = f" {paint(QUOTA_SEP, C_DIM)} "
+    body = paint("cota", C_GRAY) + " " + glue.join(
         paint(f"{label} {pct:.0f}%", pct_color(pct)) for pct, label, _ in windows
     )
 

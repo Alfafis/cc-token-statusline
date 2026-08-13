@@ -143,7 +143,7 @@ echo "rendering"
 out=$(badge "$(payload "$FIXTURE" 93000 9.3 34 12 r1)")
 contains "wrapped in one bracket"   "[token 93k/1M 9% ·" "$out"
 contains "ends with bracket"        "api 1m12s]"         "$out"
-contains "quota shows both windows" "cota 5h 34% 7d 12%" "$out"
+contains "quota shows both windows" "cota 5h 34% │ 7d 12%" "$out"
 lacks    "no reset while quota is low" "~"               "$out"
 lacks    "cost is off by default"      "1.23"            "$out"
 
@@ -151,7 +151,8 @@ out=$(badge "$(payload "$FIXTURE" 93000 9.3 34 12 r1b)" CC_TOKENS_SEGMENTS=ctx,c
 contains "cost still available on request" "\$1.23" "$out"
 
 out=$(badge "$(payload "$FIXTURE" 780000 78 41 82 r2)")
-contains "both windows kept when one is tight" "cota 5h 41% 7d 82%" "$out"
+contains "both windows kept when one is tight" "cota 5h 41% │ 7d 82%" "$out"
+lacks    "window separator is not the segment separator" "5h 41% · 7d" "$out"
 contains "one reset, for the tight window"     "~2h1"               "$out"
 check    "only one reset shown" "1" "$(printf '%s' "$out" | tr -cd '~' | wc -c | tr -d ' ')"
 

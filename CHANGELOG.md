@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- The two quota windows are separated by a dim `│`, distinct from the `·`
+  between segments, so they read as one segment with two windows.
+
 ## 0.2.0
 
 - `cota` now shows both rate limit windows (5h and 7d), each colored on its own
