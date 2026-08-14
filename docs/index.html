@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cc-token-statusline</title>
+<meta name="description" content="Claude Code status line badge: context window usage, 5h/7d account quota, cumulative tokens, cache hit rate and subagent token spend.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>▇</text></svg>">
+<style>
+  :root {
+    --bg: #ffffff;
+    --panel: #f6f6f7;
+    --ink: #17171a;
+    --muted: #61616a;
+    --line: #e2e2e6;
+    --accent: #3f7d3f;
+    --code-bg: #1b1b1f;
+    --code-ink: #d0d0d4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131316;
+      --panel: #1b1b1f;
+      --ink: #e8e8ec;
+      --muted: #97979f;
+      --line: #2c2c32;
+      --accent: #79b479;
+      --code-bg: #0f0f12;
+      --code-ink: #d0d0d4;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.6 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 860px; margin: 0 auto; padding: 4rem 1.25rem 6rem; }
+  h1 { font-size: 2rem; margin: 0 0 .35rem; letter-spacing: -.02em; }
+  h2 { font-size: 1.15rem; margin: 3rem 0 .75rem; letter-spacing: -.01em; }
+  p { margin: 0 0 1rem; }
+  .lede { color: var(--muted); font-size: 1.05rem; margin-bottom: 2rem; }
+  a { color: var(--accent); }
+  img { max-width: 100%; height: auto; display: block; border-radius: 10px; }
+  pre {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 1rem 1.1rem;
+    border-radius: 10px;
+    overflow-x: auto;
+    font: 13px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    margin: 0 0 1rem;
+  }
+  code { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  p code, li code, td code { background: var(--panel); padding: .12em .38em; border-radius: 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 0 0 1rem; font-size: .95rem; }
+  th, td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; }
+  ul { padding-left: 1.15rem; margin: 0 0 1rem; }
+  li { margin-bottom: .4rem; }
+  .links { display: flex; gap: 1.25rem; flex-wrap: wrap; margin-bottom: 2.5rem; font-size: .95rem; }
+  footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
+  .note { border-left: 3px solid var(--line); padding-left: 1rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>cc-token-statusline</h1>
+  <p class="lede">A Claude Code status line badge for what a session is actually costing — context window, account quota, cache hit rate and subagent token spend.</p>
+
+  <div class="links">
+    <a href="https://github.com/Alfafis/cc-token-statusline">Source</a>
+    <a href="https://github.com/Alfafis/cc-token-statusline/blob/main/CHANGELOG.md">Changelog</a>
+    <a href="https://github.com/Alfafis/cc-token-statusline/blob/main/SECURITY.md">Security</a>
+    <a href="https://github.com/Alfafis/cc-token-statusline/issues">Issues</a>
+  </div>
+
+  <img src="badge.svg" alt="The badge rendered twice: an everyday session, and one where the context is filling up and the weekly quota is getting tight">
+
+  <p>Colors move on their own thresholds, so the line changes shape when something needs attention instead of reading the same at 9% and at 82%.</p>
+
+  <h2>Install</h2>
+<pre>/plugin marketplace add Alfafis/cc-token-statusline
+/plugin install cc-token-statusline@cc-token-statusline</pre>
+  <p>Installing the plugin is not enough on its own: Claude Code reads <code>statusLine</code> only from <code>settings.json</code>, and no plugin can register one. The first session after install offers to do the wiring — say yes once and it is done.</p>
+
+  <h2>What each segment means</h2>
+  <table>
+    <tr><th>Segment</th><th>Reads</th><th>Why it earns the space</th></tr>
+    <tr><td><code>token</code></td><td>Context window used against the model's limit</td><td>The only value that goes down as well as up. Yellow at 60%, red at 85% — you see the wall before hitting it.</td></tr>
+    <tr><td><code>cota</code></td><td>Both account rate limit windows, 5h and 7d</td><td>Account-wide, not per session. Once either passes 70% the reset time is appended, since that is the only actionable fact left.</td></tr>
+    <tr><td><code>gasto</code></td><td>Cumulative billed input and output for the session</td><td>Consumption since the start, as opposed to the occupancy <code>token</code> measures.</td></tr>
+    <tr><td><code>cache</code></td><td>Share of billed input served from cache</td><td>Higher is better. A rate falling through a long session means something large and unstable near the top of the prompt is invalidating the cache each round.</td></tr>
+    <tr><td><code>sub</code></td><td>Tokens spent by subagents</td><td>Fan-out is one line to trigger and its cost appears nowhere else in the interface.</td></tr>
+    <tr><td><code>api</code></td><td>Time spent waiting on the API</td><td>Separated from wall clock, so a slow session can be blamed on the model or on your own tooling.</td></tr>
+  </table>
+
+  <h2>How the numbers are obtained</h2>
+  <p>Context, quota, edited lines and API time arrive in the status line JSON payload. Cumulative tokens, cache hit rate and subagent spend do not, so the session transcript is parsed. Two details decide whether that is correct and cheap:</p>
+  <ul>
+    <li><strong>Deduplication.</strong> Assistant entries repeat once per streamed content block, each copy carrying the full <code>usage</code> object. Summing them blindly overcounts by 2–3×. Every request is counted once, keyed by <code>requestId</code>.</li>
+    <li><strong>Incremental reads.</strong> The status line re-renders constantly, so the parse resumes: byte offset and running totals are cached per session, and only new bytes are read. A trailing partial line is left for the next run, because Claude Code appends to that file while the badge renders.</li>
+  </ul>
+  <p class="note">Any error prints nothing and exits 0 — a non-zero exit would hide the entire status bar, so a bug here degrades to an empty badge rather than a broken terminal.</p>
+
+  <h2>Full breakdown</h2>
+  <p>The badge is a glance. For the numbers behind it, <code>/token-report</code> prints fresh input, cache writes, cache reads, output, thinking tokens and subagent totals for the session.</p>
+
+  <h2>Configuration</h2>
+  <p>Everything is an environment variable, settable in the <code>env</code> block of <code>settings.json</code>.</p>
+  <table>
+    <tr><th>Variable</th><th>Default</th><th>Effect</th></tr>
+    <tr><td><code>CC_TOKENS_SEGMENTS</code></td><td><code>ctx,quota,tok,cache,sub,lines,api</code></td><td>Which segments, in order. Add <code>cost</code> for the dollar figure.</td></tr>
+    <tr><td><code>CC_TOKENS_WIDTH</code></td><td>terminal width − reserve</td><td>Hard cap on badge width. Worth pinning: stdout is a pipe, so terminal size has to be guessed.</td></tr>
+    <tr><td><code>CC_TOKENS_RESERVE</code></td><td><code>34</code></td><td>Columns left for other badges sharing the line.</td></tr>
+    <tr><td><code>CC_TOKENS_COLOR</code></td><td><code>1</code></td><td><code>0</code> disables color. <code>NO_COLOR</code> works too.</td></tr>
+  </table>
+  <p>When the badge does not fit, segments are dropped in a fixed order: <code>api → lines → sub → gasto → cache → cost → cota → token</code>. Cache outranks the running total on purpose — a hit rate is actionable, a scoreboard is not.</p>
+
+  <h2>Footprint</h2>
+  <ul>
+    <li>No network access, no MCP server, no credentials.</li>
+    <li>Reads the local session transcript; writes token counters to <code>~/.claude/statusline-cache/</code>. No prompt or response content is stored.</li>
+    <li>python3 standard library only, no third-party dependencies.</li>
+    <li>46 tests on Linux and macOS in CI, plus <code>claude plugin validate --strict</code> on both manifests.</li>
+  </ul>
+
+  <footer>
+    MIT licensed · <a href="https://github.com/Alfafis">Alfafis</a> · <a href="https://github.com/Alfafis/cc-token-statusline">github.com/Alfafis/cc-token-statusline</a>
+  </footer>
+
+</main>
+</body>
+</html>
