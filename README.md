@@ -138,14 +138,18 @@ Any error prints nothing and exits 0. A non-zero exit hides the whole status bar
 scripts/            the badge: a bash entry point and the python that renders it
 hooks/              SessionStart hook that offers the one-time wiring
 commands/           /token-report
-tests/              ./tests/run.sh — no dependencies beyond python3
+tests/              python3 tests/run.py — no dependencies beyond the stdlib
 ```
 
-`./tests/run.sh` covers the parts that are easy to get quietly wrong:
+`python3 tests/run.py` covers the parts that are easy to get quietly wrong:
 deduplication, incremental parsing against a one-shot parse, resuming from a
 half-written line, quota window selection, width trimming, and every failure
 mode printing nothing with exit 0. It runs against a throwaway
 `CLAUDE_CONFIG_DIR`, so the real cache is untouched.
+
+CI runs it on Linux, macOS and Windows. Windows is in the matrix because every
+portability bug this project has had was a shell assumption that no Unix runner
+could catch.
 
 ## Limitations
 

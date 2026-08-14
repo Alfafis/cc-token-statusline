@@ -7,15 +7,17 @@ on:
 
 jobs:
   test:
-    # macOS ships bash 3.2, Linux ships bash 5 — the scripts must run on both.
+    # Windows is in the matrix on purpose: the badge is meant to run there, and
+    # every Windows bug this project has had was a shell assumption no Unix
+    # runner could catch.
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
-      - run: ./tests/run.sh
+      - run: python tests/run.py
 
   manifests:
     runs-on: ubuntu-latest
