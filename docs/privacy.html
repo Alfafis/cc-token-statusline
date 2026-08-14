@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy — cc-token-statusline</title>
+<meta name="description" content="Privacy policy for the cc-token-statusline plugin for Claude Code. The plugin collects nothing and transmits nothing.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>▇</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+
+  <h1>Privacy Policy</h1>
+  <p class="lede">cc-token-statusline, a plugin for Claude Code. Effective 13 August 2026.</p>
+
+  <div class="links">
+    <a href="./">Home</a>
+    <a href="https://github.com/Alfafis/cc-token-statusline">Source</a>
+    <a href="https://github.com/Alfafis/cc-token-statusline/blob/main/SECURITY.md">Security</a>
+  </div>
+
+  <h2>Summary</h2>
+  <p>The plugin collects nothing and transmits nothing. It has no network access, no server, no analytics and no telemetry. Everything it reads and writes stays on your machine, and the author receives no data from your use of it.</p>
+
+  <h2>What the plugin reads</h2>
+  <p>All of it local, all of it produced by Claude Code on your own machine:</p>
+  <ul>
+    <li>The status line JSON payload Claude Code sends it on each render — context window usage, session cost, rate limit percentages, model name, and the path of the session transcript.</li>
+    <li>The session transcript at that path. Only the numeric <code>usage</code> fields of assistant entries are read — token counts and request identifiers. Prompt text, responses, file contents and tool results are not read.</li>
+    <li>Its own cache, described below.</li>
+    <li><code>settings.json</code>, <code>settings.local.json</code> and <code>combined-statusline.sh</code>, only to test whether the badge is already wired into your status line. The check searches for a filename and nothing else is extracted from those files.</li>
+  </ul>
+
+  <h2>What the plugin stores</h2>
+  <p>One small file per session under <code>~/.claude/statusline-cache/</code> (or <code>$CLAUDE_CONFIG_DIR/statusline-cache/</code> when set), containing:</p>
+  <ul>
+    <li>running token counters for the session;</li>
+    <li>the byte offset already parsed in the transcript;</li>
+    <li>the request identifiers already counted, so a request is not counted twice.</li>
+  </ul>
+  <p>No prompt text, no responses, no file contents, no credentials. The files stay on your disk until you remove them, and nothing prunes them automatically. To delete everything the plugin has ever written:</p>
+<pre>rm -rf ~/.claude/statusline-cache/</pre>
+  <p><code>install.sh</code>, when you run it, also copies two scripts into <code>~/.claude/hooks/</code> and adds a <code>statusLine</code> entry to your <code>settings.json</code>, backing up every file it edits. That is a one-time action you invoke; nothing else writes outside the cache directory.</p>
+
+  <h2>What is never done</h2>
+  <ul>
+    <li>No network requests, at install time or at runtime.</li>
+    <li>No MCP server is shipped or started.</li>
+    <li>No credentials, API keys or account identifiers are read, stored or transmitted.</li>
+    <li>No third-party dependency — python3 standard library only, so no other party's code runs on your machine through this plugin.</li>
+    <li>Nothing is shared with the author or with anyone else, because nothing leaves your machine.</li>
+  </ul>
+
+  <h2>This website</h2>
+  <p>This site is static and hosted on GitHub Pages. It sets no cookies, runs no scripts, and loads no fonts, images or resources from other hosts. GitHub, as the host, may log requests to its servers — see the <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub Privacy Statement</a>. The author has no access to those logs beyond aggregate traffic counts GitHub shows repository owners.</p>
+
+  <h2>Children</h2>
+  <p>This is a developer tool, not directed at children, and it collects no personal information from anyone.</p>
+
+  <h2>Changes</h2>
+  <p>If this policy changes, the revision will be published on this page with a new effective date, and recorded in the repository history like any other change.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about this policy: <a href="mailto:betech@developercorp.com">betech@developercorp.com</a>, or open an <a href="https://github.com/Alfafis/cc-token-statusline/issues">issue</a>. For anything security related, use a <a href="https://github.com/Alfafis/cc-token-statusline/security/advisories/new">private advisory</a> instead.</p>
+
+  <footer>
+    MIT licensed · <a href="https://github.com/Alfafis">Alfafis</a> · <a href="./">cc-token-statusline</a>
+  </footer>
+
+</main>
+</body>
+</html>

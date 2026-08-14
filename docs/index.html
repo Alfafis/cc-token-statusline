@@ -6,63 +6,7 @@
 <title>cc-token-statusline</title>
 <meta name="description" content="Claude Code status line badge: context window usage, 5h/7d account quota, cumulative tokens, cache hit rate and subagent token spend.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>▇</text></svg>">
-<style>
-  :root {
-    --bg: #ffffff;
-    --panel: #f6f6f7;
-    --ink: #17171a;
-    --muted: #61616a;
-    --line: #e2e2e6;
-    --accent: #3f7d3f;
-    --code-bg: #1b1b1f;
-    --code-ink: #d0d0d4;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #131316;
-      --panel: #1b1b1f;
-      --ink: #e8e8ec;
-      --muted: #97979f;
-      --line: #2c2c32;
-      --accent: #79b479;
-      --code-bg: #0f0f12;
-      --code-ink: #d0d0d4;
-    }
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--ink);
-    font: 16px/1.6 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
-  }
-  main { max-width: 860px; margin: 0 auto; padding: 4rem 1.25rem 6rem; }
-  h1 { font-size: 2rem; margin: 0 0 .35rem; letter-spacing: -.02em; }
-  h2 { font-size: 1.15rem; margin: 3rem 0 .75rem; letter-spacing: -.01em; }
-  p { margin: 0 0 1rem; }
-  .lede { color: var(--muted); font-size: 1.05rem; margin-bottom: 2rem; }
-  a { color: var(--accent); }
-  img { max-width: 100%; height: auto; display: block; border-radius: 10px; }
-  pre {
-    background: var(--code-bg);
-    color: var(--code-ink);
-    padding: 1rem 1.1rem;
-    border-radius: 10px;
-    overflow-x: auto;
-    font: 13px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    margin: 0 0 1rem;
-  }
-  code { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  p code, li code, td code { background: var(--panel); padding: .12em .38em; border-radius: 4px; }
-  table { width: 100%; border-collapse: collapse; margin: 0 0 1rem; font-size: .95rem; }
-  th, td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; }
-  ul { padding-left: 1.15rem; margin: 0 0 1rem; }
-  li { margin-bottom: .4rem; }
-  .links { display: flex; gap: 1.25rem; flex-wrap: wrap; margin-bottom: 2.5rem; font-size: .95rem; }
-  footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
-  .note { border-left: 3px solid var(--line); padding-left: 1rem; color: var(--muted); }
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main>
@@ -74,6 +18,7 @@
     <a href="https://github.com/Alfafis/cc-token-statusline">Source</a>
     <a href="https://github.com/Alfafis/cc-token-statusline/blob/main/CHANGELOG.md">Changelog</a>
     <a href="https://github.com/Alfafis/cc-token-statusline/blob/main/SECURITY.md">Security</a>
+    <a href="privacy.html">Privacy</a>
     <a href="https://github.com/Alfafis/cc-token-statusline/issues">Issues</a>
   </div>
 
@@ -128,7 +73,7 @@
   </ul>
 
   <footer>
-    MIT licensed · <a href="https://github.com/Alfafis">Alfafis</a> · <a href="https://github.com/Alfafis/cc-token-statusline">github.com/Alfafis/cc-token-statusline</a>
+    MIT licensed · <a href="https://github.com/Alfafis">Alfafis</a> · <a href="https://github.com/Alfafis/cc-token-statusline">github.com/Alfafis/cc-token-statusline</a> · <a href="privacy.html">Privacy</a>
   </footer>
 
 </main>
