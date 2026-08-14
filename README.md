@@ -2,11 +2,12 @@
 
 [![tests](https://github.com/Alfafis/cc-token-statusline/actions/workflows/ci.yml/badge.svg)](https://github.com/Alfafis/cc-token-statusline/actions/workflows/ci.yml)
 
-Status line badge for Claude Code showing what a session is actually costing:
+Status line badge for Claude Code showing what a session is actually costing.
 
-```
-[token 93k/1M 9% · cota 5h 34% │ 7d 12% · gasto ↑2.4M ↓33k · cache 97% · sub 120k · +230/-14 · api 1m12s]
-```
+![The badge, rendered twice: an everyday session, and one where the context is filling up and the weekly quota is getting tight](docs/badge.svg)
+
+Colors move on their own thresholds, so the line changes shape when something
+needs attention instead of reading the same at 9% and at 82%.
 
 | Key | Label | Meaning | Source |
 | --- | --- | --- | --- |

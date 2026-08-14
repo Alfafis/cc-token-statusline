@@ -138,6 +138,20 @@ badge "$(payload "$torn" 93000 9.3 34 12 torn)" > /dev/null
 check "torn line resumes cleanly" "$(totals once cache_read)" "$(totals torn cache_read)"
 check "torn line no double count" "$(totals once requests)"   "$(totals torn requests)"
 
+# A transcript is untrusted input: one malformed entry must not take the badge
+# down with it, and nothing from it reaches the terminal unformatted.
+poisoned="$WORK/poisoned.jsonl"
+{
+  cat "$FIXTURE"
+  printf '%s\n' '{"type":"assistant","uuid":"p1","requestId":"req_P","message":{"usage":{"input_tokens":"[31mnope","output_tokens":7}}}'
+  printf '%s\n' 'not json at all'
+  printf '%s\n' '{"type":"assistant","uuid":"p2","requestId":"req_Q","message":{"usage":{"input_tokens":1,"cache_read_input_tokens":9,"output_tokens":2}}}'
+} > "$poisoned"
+out=$(badge "$(payload "$poisoned" 93000 9.3 34 12 poison)")
+contains "survives a malformed usage entry" "gasto" "$out"
+lacks    "no escape sequence leaks through" "nope" "$out"
+check    "bad entry skipped, good one kept" "3" "$(totals poison requests)"
+
 echo "rendering"
 
 out=$(badge "$(payload "$FIXTURE" 93000 9.3 34 12 r1)")

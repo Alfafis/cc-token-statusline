@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2
+
+- A malformed `usage` entry in the transcript now costs one entry instead of the
+  whole badge — that parse runs outside the per-segment error guard.
+- Added `SECURITY.md` and a rendered badge image in the README.
+
 ## 0.2.1
 
 - The two quota windows are separated by a dim `│`, distinct from the `·`

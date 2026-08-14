@@ -275,7 +275,12 @@ def read_transcript(transcript_path: str, session_id: str) -> dict | None:
             seen_set.add(key)
             seen.append(key)
 
-            accumulate(totals, usage, bool(entry.get("isSidechain")))
+            try:
+                accumulate(totals, usage, bool(entry.get("isSidechain")))
+            except (TypeError, ValueError):
+                # A non-numeric usage field should cost us one entry, not the
+                # whole badge - this runs outside the per-segment guard.
+                continue
 
         if offset == 0 and consumed == 0 and not tail:
             consumed = size
