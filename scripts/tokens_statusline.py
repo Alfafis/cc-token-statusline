@@ -584,6 +584,13 @@ def report(transcript_path: str) -> int:
     return 0
 
 
+def render(payload: dict) -> str:
+    """Build the badge for a payload. Entry point for the chain wrapper."""
+    global G
+    G = glyphs()
+    return build(payload)
+
+
 def main() -> int:
     global G
     # Windows consoles hand us cp1252, which cannot encode the separators or the
@@ -608,7 +615,7 @@ def main() -> int:
         payload = json.loads(raw) if raw.strip() else {}
         if not isinstance(payload, dict):
             payload = {}
-        badge = build(payload)
+        badge = render(payload)
         if badge:
             sys.stdout.write(badge)
             sys.stdout.flush()

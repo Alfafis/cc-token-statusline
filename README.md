@@ -75,14 +75,25 @@ No shell, no `bash`, no guessing whether this machine calls it `python` or
 nor a `python3.exe`, and a `statusLine` command that fails hides the entire
 status bar rather than just this badge.
 
+### Already using another status line
+
+Claude Code allows exactly one `statusLine` command, so an existing one is
+wrapped rather than replaced: it runs first, with the same payload on stdin, and
+the badge is appended to whatever it prints.
+
+```
+ccusage output here  [token 93k/1M 9% · cota 5h 34% │ 7d 12% · cache 99%]
+```
+
+The wrapped command gets a 2 second timeout (`CC_TOKENS_CHAIN_TIMEOUT`) and its
+failures are swallowed, so a slow or broken third-party status line cannot take
+the badge — or the whole status bar — down with it.
+
 | Flag | Effect |
 | --- | --- |
-| `--replace` | take over an existing statusLine (the previous command is saved and restorable) |
+| `--replace` | discard the existing statusLine instead of wrapping it |
 | `--uninstall` | put the previous statusLine back, or remove ours if there was none |
 | `--dry-run` | print what would change |
-
-Without `--replace`, an unrelated statusLine is left untouched and the installer
-stops.
 
 ## Configuration
 
@@ -96,6 +107,7 @@ All via environment variables (settable in the `env` block of `settings.json`):
 | `CC_TOKENS_COLOR` | `1` | `0` disables color (`NO_COLOR` works too) |
 | `CC_TOKENS_ASCII` | unset | `1` forces ASCII glyphs (`|`, `^`, `v`) instead of `│ ↑ ↓` |
 | `CC_TOKENS_PYTHON` | autodetected | explicit python path, honored only by the legacy bash entry point |
+| `CC_TOKENS_CHAIN_TIMEOUT` | `2` | seconds allowed to a wrapped status line command |
 | `CC_TOKENS_DEBUG` | unset | raise errors instead of printing nothing |
 
 When the badge does not fit, segments are dropped in this order:

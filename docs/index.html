@@ -30,6 +30,7 @@
 <pre>/plugin marketplace add Alfafis/cc-token-statusline
 /plugin install cc-token-statusline@cc-token-statusline</pre>
   <p>Installing the plugin is not enough on its own: Claude Code reads <code>statusLine</code> only from <code>settings.json</code>, and no plugin can register one. The first session after install offers to do the wiring — say yes once and it is done.</p>
+  <p>Already using another status line? Claude Code allows exactly one command, so yours is wrapped instead of replaced: it runs first with the same payload, and the badge is appended to its output. It gets a short timeout and its failures are swallowed, so a slow or broken one cannot take the bar down. <code>--replace</code> drops it, <code>--uninstall</code> puts it back.</p>
 
   <h2>What each segment means</h2>
   <table>
@@ -70,7 +71,7 @@
     <li>No network access, no MCP server, no credentials.</li>
     <li>Reads the local session transcript; writes token counters to <code>~/.claude/statusline-cache/</code>. No prompt or response content is stored.</li>
     <li>python3 standard library only, no third-party dependencies. No shell in the runtime path, so it behaves the same on Windows.</li>
-    <li>63 tests on Linux, macOS and Windows in CI, plus <code>claude plugin validate --strict</code> on both manifests.</li>
+    <li>72 tests on Linux, macOS and Windows in CI, plus <code>claude plugin validate --strict</code> on both manifests.</li>
   </ul>
 
   <footer>

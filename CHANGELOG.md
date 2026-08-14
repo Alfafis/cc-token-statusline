@@ -20,7 +20,13 @@ Windows support, proven by CI rather than assumed.
 - `install.py` replaces `install.sh` (kept as a passthrough wrapper), and adds
   `--replace`, `--uninstall` and `--dry-run`. Uninstall restores whatever
   statusLine was there before.
-- The test suite is python and runs on Windows in CI. 63 tests, up from 46.
+- **An existing status line is wrapped, not replaced.** Claude Code allows one
+  `statusLine` command, and the installer used to refuse when it found someone
+  else's — which made the plugin unusable next to ccusage, powerline or any
+  hand-rolled script. The previous command now runs first with the same payload
+  and the badge is appended to its output, under a 2 second timeout whose
+  failures are swallowed. `--replace` drops it, `--uninstall` puts it back.
+- The test suite is python and runs on Windows in CI. 72 tests, up from 46.
 
 ## 0.2.3
 

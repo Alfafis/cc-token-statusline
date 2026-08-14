@@ -351,11 +351,14 @@ def suite(work: str) -> int:
     contains("wires an absolute interpreter", sys.executable.replace("\\", "/"), command)
     lacks("no bash in the wired command", "bash", command)
 
-    # An unrelated statusLine must survive an install that was not told to replace it.
+    # Claude Code allows one statusLine command, so someone else's is wrapped
+    # rather than replaced. Refusing to install was the old behavior and it made
+    # the plugin unusable next to ccusage, powerline or a hand-rolled script.
     other = os.path.join(work, "othercfg")
     os.makedirs(other, exist_ok=True)
-    with open(os.path.join(other, "settings.json"), "w", encoding="utf-8") as handle:
-        json.dump({"statusLine": {"type": "command", "command": "ccusage statusline"}}, handle)
+    settings_other = os.path.join(other, "settings.json")
+    with open(settings_other, "w", encoding="utf-8") as handle:
+        json.dump({"statusLine": {"type": "command", "command": "echo PREVIOUS"}}, handle)
 
     def run_other(*args):
         env = dict(os.environ, CLAUDE_CONFIG_DIR=other)
@@ -368,20 +371,59 @@ def suite(work: str) -> int:
         )
         return proc.stdout, proc.returncode
 
-    out, code = run_other()
-    check("refuses to clobber a foreign statusLine", 1, code)
-    contains("explains the refusal", "--replace", out)
-    kept = json.load(open(os.path.join(other, "settings.json"), encoding="utf-8"))
-    check("foreign statusLine untouched", "ccusage statusline", kept["statusLine"]["command"])
+    out, code = run_other("--dry-run")
+    contains("dry run announces the chaining", "would keep", out)
+    check("dry run leaves the foreign command alone", "echo PREVIOUS",
+          json.load(open(settings_other, encoding="utf-8"))["statusLine"]["command"])
 
-    out, code = run_other("--replace")
-    taken = json.load(open(os.path.join(other, "settings.json"), encoding="utf-8"))
-    contains("replace takes it over", "tokens_statusline.py", taken["statusLine"]["command"])
+    out, code = run_other()
+    chained = json.load(open(settings_other, encoding="utf-8"))
+    contains("chains onto the foreign statusLine", "statusline_chain.py", chained["statusLine"]["command"])
+    saved = json.load(open(os.path.join(other, "hooks", "cc-token-statusline-chain.json"), encoding="utf-8"))
+    check("records what it wrapped", "echo PREVIOUS", saved["previous"])
+
+    def run_chain(cfg, **extra):
+        env = dict(os.environ, CLAUDE_CONFIG_DIR=cfg, NO_COLOR="1", CC_TOKENS_WIDTH="400", **extra)
+        proc = subprocess.run(
+            [sys.executable, os.path.join(cfg, "hooks", "statusline_chain.py")],
+            input=payload(FIXTURE, session="chain"),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+        )
+        return proc.stdout, proc.returncode
+
+    out, code = run_chain(other)
+    check("chain exits 0", 0, code)
+    contains("chain keeps the wrapped output", "PREVIOUS", out)
+    contains("chain appends the badge", "token 93k/1M 9%", out)
+    check("wrapped output comes first", True, out.index("PREVIOUS") < out.index("token"))
+
+    # A broken third-party status line must cost its own output and nothing else.
+    with open(os.path.join(other, "hooks", "cc-token-statusline-chain.json"), "w", encoding="utf-8") as handle:
+        json.dump({"previous": "definitely-not-a-real-command --nope"}, handle)
+    out, code = run_chain(other)
+    check("chain survives a broken wrapped command", 0, code)
+    contains("badge still renders when the wrapped command fails", "token 93k/1M 9%", out)
 
     out, code = run_other("--uninstall")
-    restored = json.load(open(os.path.join(other, "settings.json"), encoding="utf-8"))
-    check("uninstall restores the previous command", "ccusage statusline", restored["statusLine"]["command"])
+    restored = json.load(open(settings_other, encoding="utf-8"))
+    check("uninstall restores the previous command", "echo PREVIOUS", restored["statusLine"]["command"])
     check("uninstall drops its bookkeeping key", False, "_ccTokenStatuslinePrevious" in restored)
+    check("uninstall removes the chain wrapper", False,
+          os.path.exists(os.path.join(other, "hooks", "statusline_chain.py")))
+
+    # --replace is the escape hatch for people who want the badge alone.
+    replaced = os.path.join(work, "replacecfg")
+    os.makedirs(replaced, exist_ok=True)
+    with open(os.path.join(replaced, "settings.json"), "w", encoding="utf-8") as handle:
+        json.dump({"statusLine": {"type": "command", "command": "echo PREVIOUS"}}, handle)
+    env = dict(os.environ, CLAUDE_CONFIG_DIR=replaced)
+    subprocess.run([sys.executable, installer, "--replace"], capture_output=True, env=env)
+    taken = json.load(open(os.path.join(replaced, "settings.json"), encoding="utf-8"))
+    contains("replace points straight at the badge", "tokens_statusline.py", taken["statusLine"]["command"])
+    lacks("replace does not chain", "statusline_chain.py", taken["statusLine"]["command"])
 
     print("json manifests")
     for name in (
