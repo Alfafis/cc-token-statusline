@@ -55,10 +55,25 @@ SEGMENT_PRIORITY = ("api", "lines", "sub", "tok", "cache", "cost", "quota", "ctx
 # Below this, the reset time is not worth the width it costs.
 QUOTA_ALERT_PCT = 70.0
 
-SEP = "·"
-# Deliberately not SEP: the two quota windows belong to one segment, and reusing
-# the segment separator would read as two.
-QUOTA_SEP = "│"
+# Glyphs have an ASCII twin because Windows consoles default to cp1252, which
+# cannot encode any of these. Writing them there raises UnicodeEncodeError, and
+# an uncaught one exits non-zero, which hides the entire status bar.
+GLYPHS_UNICODE = {"sep": "·", "quota_sep": "│", "up": "↑", "down": "↓", "approx": "~"}
+GLYPHS_ASCII = {"sep": "-", "quota_sep": "|", "up": "^", "down": "v", "approx": "~"}
+
+
+def glyphs() -> dict:
+    if os.environ.get("CC_TOKENS_ASCII") == "1":
+        return GLYPHS_ASCII
+    encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+    try:
+        "".join(GLYPHS_UNICODE.values()).encode(encoding)
+    except (LookupError, UnicodeEncodeError):
+        return GLYPHS_ASCII
+    return GLYPHS_UNICODE
+
+
+G = GLYPHS_UNICODE  # replaced in main() once the output encoding is known
 
 C_RESET = "\033[0m"
 C_DIM = "\033[2m"
@@ -340,8 +355,11 @@ def seg_tok(payload: dict, totals: dict | None) -> str:
     billed_in = totals["input"] + totals["cache_creation"] + totals["cache_read"]
     if not billed_in and not totals["output"]:
         return ""
-    mark = "~" if totals.get("partial") else ""
-    body = f"gasto {mark}↑{fmt_tokens(billed_in)} ↓{fmt_tokens(totals['output'])}"
+    mark = G["approx"] if totals.get("partial") else ""
+    body = (
+        f"gasto {mark}{G['up']}{fmt_tokens(billed_in)}"
+        f" {G['down']}{fmt_tokens(totals['output'])}"
+    )
     return paint(body, C_GRAY)
 
 
@@ -436,7 +454,7 @@ def seg_quota(payload: dict, totals: dict | None) -> str:
     if not windows:
         return ""
 
-    glue = f" {paint(QUOTA_SEP, C_DIM)} "
+    glue = f" {paint(G['quota_sep'], C_DIM)} "
     body = paint("cota", C_GRAY) + " " + glue.join(
         paint(f"{label} {pct:.0f}%", pct_color(pct)) for pct, label, _ in windows
     )
@@ -449,7 +467,8 @@ def seg_quota(payload: dict, totals: dict | None) -> str:
             remaining = (reset - datetime.now(timezone.utc)).total_seconds()
             if remaining > 0:
                 body += paint(
-                    f" ~{fmt_duration(remaining * 1000)}", pct_color(worst_pct)
+                    f" {G['approx']}{fmt_duration(remaining * 1000)}",
+                    pct_color(worst_pct),
                 )
     return body
 
@@ -490,7 +509,7 @@ def join(parts: list[str]) -> str:
     """Join segments and wrap them in one bracket - never an empty `[]`."""
     if not parts:
         return ""
-    glue = f" {paint(SEP, C_DIM)} " if use_color() else f" {SEP} "
+    glue = f" {paint(G['sep'], C_DIM)} " if use_color() else f" {G['sep']} "
     inner = glue.join(parts)
     if not use_color():
         return f"[{inner}]"
@@ -566,6 +585,17 @@ def report(transcript_path: str) -> int:
 
 
 def main() -> int:
+    global G
+    # Windows consoles hand us cp1252, which cannot encode the separators or the
+    # arrows. Ask for UTF-8 first; if that is refused, fall back to ASCII twins.
+    # An unencodable character raises on the way out, and a non-zero exit hides
+    # the whole status bar.
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, OSError, ValueError):
+        pass
+    G = glyphs()
+
     if "--report" in sys.argv:
         index = sys.argv.index("--report")
         if index + 1 >= len(sys.argv):
@@ -579,12 +609,13 @@ def main() -> int:
         if not isinstance(payload, dict):
             payload = {}
         badge = build(payload)
+        if badge:
+            sys.stdout.write(badge)
+            sys.stdout.flush()
     except Exception:
         if os.environ.get("CC_TOKENS_DEBUG"):
             raise
         return 0
-    if badge:
-        sys.stdout.write(badge)
     return 0
 
 

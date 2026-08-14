@@ -19,6 +19,13 @@ import subprocess
 import sys
 import tempfile
 
+# The suite prints the glyphs it asserts on, and Windows hands python a cp1252
+# stdout that cannot encode them - the reporter would crash before reporting.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, OSError, ValueError):
+    pass
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPT = os.path.join(ROOT, "scripts", "tokens_statusline.py")
 FIXTURE = os.path.join(ROOT, "tests", "fixtures", "transcript.jsonl")
@@ -96,6 +103,7 @@ def badge(stdin: str, width="400", **env_extra) -> str:
         input=stdin,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         env=env,
     )
     return proc.stdout
@@ -103,7 +111,11 @@ def badge(stdin: str, width="400", **env_extra) -> str:
 
 def run_raw(stdin: str):
     proc = subprocess.run(
-        [sys.executable, SCRIPT], input=stdin, capture_output=True, text=True
+        [sys.executable, SCRIPT],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
     )
     return proc.stdout, proc.returncode
 
@@ -211,6 +223,30 @@ def suite(work: str) -> int:
     out = badge(payload(FIXTURE, session="r5"), CC_TOKENS_SEGMENTS="ctx,limits")
     contains("limits still aliases quota", "cota 5h 34%", out)
 
+    print("encoding")
+
+    # The bug this section exists for: a Windows console hands python cp1252,
+    # which cannot encode any of the separators or arrows. Writing one raised on
+    # the way out, the process exited non-zero, and Claude Code hid the entire
+    # status bar — not just this badge.
+    env = dict(os.environ, PYTHONIOENCODING="cp1252", NO_COLOR="1", CC_TOKENS_WIDTH="400")
+    proc = subprocess.run(
+        [sys.executable, SCRIPT],
+        input=payload(FIXTURE, session="cp1252"),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=env,
+    )
+    check("legacy console encoding exits 0", 0, proc.returncode)
+    contains("legacy console encoding still renders", "token 93k/1M 9%", proc.stdout)
+
+    out = badge(payload(FIXTURE, session="ascii"), CC_TOKENS_ASCII="1")
+    contains("ascii mode uses a plain bar", "cota 5h 34% | 7d 12%", out)
+    contains("ascii mode uses caret and vee", "gasto ^", out)
+    for glyph in ("·", "│", "↑", "↓"):
+        lacks(f"ascii mode drops {glyph!r}", glyph, out)
+
     print("failure modes")
 
     for name, stdin in (
@@ -251,7 +287,11 @@ def suite(work: str) -> int:
 
         def run_hook():
             return subprocess.run(
-                ["bash", hook], capture_output=True, text=True, env=env
+                ["bash", hook],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                env=env,
             ).stdout
 
         out = run_hook()
