@@ -61,6 +61,7 @@
     <tr><td><code>CC_TOKENS_WIDTH</code></td><td>terminal width − reserve</td><td>Hard cap on badge width. Worth pinning: stdout is a pipe, so terminal size has to be guessed.</td></tr>
     <tr><td><code>CC_TOKENS_RESERVE</code></td><td><code>34</code></td><td>Columns left for other badges sharing the line.</td></tr>
     <tr><td><code>CC_TOKENS_COLOR</code></td><td><code>1</code></td><td><code>0</code> disables color. <code>NO_COLOR</code> works too.</td></tr>
+    <tr><td><code>CC_TOKENS_ASCII</code></td><td>unset</td><td><code>1</code> forces ASCII glyphs. Applied automatically on consoles that cannot encode the originals.</td></tr>
   </table>
   <p>When the badge does not fit, segments are dropped in a fixed order: <code>api → lines → sub → gasto → cache → cost → cota → token</code>. Cache outranks the running total on purpose — a hit rate is actionable, a scoreboard is not.</p>
 
@@ -68,8 +69,8 @@
   <ul>
     <li>No network access, no MCP server, no credentials.</li>
     <li>Reads the local session transcript; writes token counters to <code>~/.claude/statusline-cache/</code>. No prompt or response content is stored.</li>
-    <li>python3 standard library only, no third-party dependencies.</li>
-    <li>46 tests on Linux and macOS in CI, plus <code>claude plugin validate --strict</code> on both manifests.</li>
+    <li>python3 standard library only, no third-party dependencies. No shell in the runtime path, so it behaves the same on Windows.</li>
+    <li>63 tests on Linux, macOS and Windows in CI, plus <code>claude plugin validate --strict</code> on both manifests.</li>
   </ul>
 
   <footer>

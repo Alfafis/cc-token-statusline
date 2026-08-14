@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0
+
+Windows support, proven by CI rather than assumed.
+
+- **Fixed: the badge took the whole status bar down on Windows.** Consoles there
+  hand python a `cp1252` stdout, which cannot encode the separators or arrows.
+  The write sat outside the error guard, so the process exited non-zero — and a
+  failing `statusLine` command hides the entire bar, including other plugins'
+  badges. stdout is now UTF-8, glyphs fall back to ASCII twins when a console
+  refuses them, and `CC_TOKENS_ASCII=1` forces the plain set.
+- **No shell in the runtime path.** `install.py` wires `statusLine` to this
+  interpreter by absolute path, so nothing depends on `bash` existing or on
+  whether the machine calls it `python` or `python3` — a stock Windows install
+  has neither `bash` nor `python3.exe`.
+- `setup-check.sh` is now `setup_check.py`, so the SessionStart nudge works on
+  Windows too. It also detects a badge still wired through the old bash entry
+  point on a machine without bash, and offers to repair it.
+- `install.py` replaces `install.sh` (kept as a passthrough wrapper), and adds
+  `--replace`, `--uninstall` and `--dry-run`. Uninstall restores whatever
+  statusLine was there before.
+- The test suite is python and runs on Windows in CI. 63 tests, up from 46.
+
 ## 0.2.3
 
 - Project site at https://alfafis.github.io/cc-token-statusline/, served from

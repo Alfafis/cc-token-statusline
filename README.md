@@ -58,26 +58,31 @@ after install offers to run the wiring for you. Say yes once and it is done.
 Standalone, or to do the wiring yourself:
 
 ```bash
-./install.sh
+python3 scripts/install.py       # python scripts/install.py on Windows
 ```
 
-It copies `tokens-statusline.sh` and `tokens_statusline.py` into `~/.claude/hooks`
-and wires them up, backing up anything it edits.
+It copies the badge into `~/.claude/hooks` and points `statusLine` at it,
+backing up every file it edits.
 
-If a `combined-statusline.sh` already exists, the badge is appended to its
-`SCRIPTS` array. **That wrapper must forward stdin** — every number here comes
-from the status line JSON payload, and the common version of the wrapper drops
-it. The change is three lines:
+The wired command names the interpreter by absolute path:
 
-```bash
-PAYLOAD=""
-[ -t 0 ] || PAYLOAD=$(cat)
-# ...
-badge=$(printf '%s' "$PAYLOAD" | bash "$path" 2>/dev/null)
+```json
+"statusLine": { "command": "\"/usr/bin/python3\" \"/home/me/.claude/hooks/tokens_statusline.py\"" }
 ```
 
-If some other status line is already configured, `install.sh` stops and leaves it
-alone; combine them yourself.
+No shell, no `bash`, no guessing whether this machine calls it `python` or
+`python3` — which matters, because a stock Windows install has neither `bash`
+nor a `python3.exe`, and a `statusLine` command that fails hides the entire
+status bar rather than just this badge.
+
+| Flag | Effect |
+| --- | --- |
+| `--replace` | take over an existing statusLine (the previous command is saved and restorable) |
+| `--uninstall` | put the previous statusLine back, or remove ours if there was none |
+| `--dry-run` | print what would change |
+
+Without `--replace`, an unrelated statusLine is left untouched and the installer
+stops.
 
 ## Configuration
 
@@ -89,7 +94,8 @@ All via environment variables (settable in the `env` block of `settings.json`):
 | `CC_TOKENS_WIDTH` | terminal width − reserve | hard cap on badge width |
 | `CC_TOKENS_RESERVE` | `34` | columns left for other badges |
 | `CC_TOKENS_COLOR` | `1` | `0` disables color (`NO_COLOR` works too) |
-| `CC_TOKENS_PYTHON` | autodetected | explicit python3 path |
+| `CC_TOKENS_ASCII` | unset | `1` forces ASCII glyphs (`|`, `^`, `v`) instead of `│ ↑ ↓` |
+| `CC_TOKENS_PYTHON` | autodetected | explicit python path, honored only by the legacy bash entry point |
 | `CC_TOKENS_DEBUG` | unset | raise errors instead of printing nothing |
 
 When the badge does not fit, segments are dropped in this order:
@@ -135,8 +141,8 @@ Any error prints nothing and exits 0. A non-zero exit hides the whole status bar
 
 ```
 .claude-plugin/     plugin and marketplace manifests
-scripts/            the badge: a bash entry point and the python that renders it
-hooks/              SessionStart hook that offers the one-time wiring
+scripts/            the badge, the installer and the SessionStart check
+hooks/              hooks.json only
 commands/           /token-report
 tests/              python3 tests/run.py — no dependencies beyond the stdlib
 ```
@@ -160,7 +166,9 @@ could catch.
 * The status line runs a copy under `~/.claude/hooks`, not the plugin's own
   files — a plugin path carries a version hash and would break on every update.
   So `plugin update` does not reach the badge; the SessionStart hook notices the
-  drift and offers to re-run `install.sh`.
-* Terminal width is read from `COLUMNS`, or from `/dev/tty` when the wrapper can
-  reach it, and falls back to 80 columns otherwise — a wide terminal may drop
-  segments it had room for. Set `CC_TOKENS_WIDTH` to pin it.
+  drift and offers to re-run the installer.
+* Terminal width is read from `COLUMNS` and falls back to 80 columns — stdout is
+  a pipe, so a wide terminal may drop segments it had room for. Set
+  `CC_TOKENS_WIDTH` to pin it.
+* Consoles that cannot encode the box-drawing and arrow glyphs (Windows `cp1252`)
+  get the ASCII set automatically. Output is written as UTF-8 regardless.

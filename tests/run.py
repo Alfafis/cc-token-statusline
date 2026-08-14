@@ -275,56 +275,113 @@ def suite(work: str) -> int:
 
     print("setup hook")
 
-    hook = os.path.join(ROOT, "hooks", "setup-check.sh")
-    if WINDOWS:
-        # Ported to python in the next step; a bash hook cannot run here, which
-        # is exactly the bug this suite exists to catch.
-        skip("setup hook", "bash hook, not runnable on Windows")
+    hook = os.path.join(ROOT, "scripts", "setup_check.py")
+    hook_dir = os.path.join(work, "hookcfg")
+    os.makedirs(os.path.join(hook_dir, "hooks"), exist_ok=True)
+
+    def run_hook(**extra):
+        env = dict(os.environ, CLAUDE_CONFIG_DIR=hook_dir, CLAUDE_PLUGIN_ROOT=ROOT, **extra)
+        return subprocess.run(
+            [sys.executable, hook],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+        ).stdout
+
+    out = run_hook()
+    contains("nudges when not wired", "not wired up yet", out)
+    try:
+        json.loads(out)
+        ok("nudge is valid json")
+    except ValueError:
+        no("nudge is valid json", "parses", out)
+
+    settings = os.path.join(hook_dir, "settings.json")
+    with open(settings, "w", encoding="utf-8") as handle:
+        json.dump({"statusLine": {"command": '"python" "~/.claude/hooks/tokens_statusline.py"'}}, handle)
+    shutil.copyfile(SCRIPT, os.path.join(hook_dir, "hooks", "tokens_statusline.py"))
+    check("silent once wired and current", "", run_hook())
+
+    # `plugin update` refreshes the plugin but not the copy the badge runs.
+    with open(os.path.join(hook_dir, "hooks", "tokens_statusline.py"), "a", encoding="utf-8") as handle:
+        handle.write("# stale\n")
+    contains("warns when the installed copy drifts", "was updated but the copy", run_hook())
+    shutil.copyfile(SCRIPT, os.path.join(hook_dir, "hooks", "tokens_statusline.py"))
+
+    # Wired through bash on a machine without bash: that command fails on every
+    # render, and a failing statusLine hides the whole bar.
+    with open(settings, "w", encoding="utf-8") as handle:
+        json.dump({"statusLine": {"command": "bash ~/.claude/hooks/tokens-statusline.sh"}}, handle)
+    out = run_hook(PATH="")
+    contains("flags bash wiring with no bash present", "no bash on PATH", out)
+    if shutil.which("bash"):
+        check("stays quiet when bash does exist", "", run_hook())
     else:
-        hook_dir = os.path.join(work, "hookcfg")
-        os.makedirs(os.path.join(hook_dir, "hooks"), exist_ok=True)
-        env = dict(os.environ, CLAUDE_CONFIG_DIR=hook_dir, CLAUDE_PLUGIN_ROOT=ROOT)
+        skip("stays quiet when bash does exist", "no bash on this platform")
 
-        def run_hook():
-            return subprocess.run(
-                ["bash", hook],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                env=env,
-            ).stdout
+    open(os.path.join(hook_dir, ".cc-token-statusline-skip"), "w").close()
+    check("skip marker silences everything", "", run_hook())
 
-        out = run_hook()
-        contains("nudges when not wired", "not wired up yet", out)
-        try:
-            json.loads(out)
-            ok("nudge is valid json")
-        except ValueError:
-            no("nudge is valid json", "parses", out)
+    print("installer")
 
-        with open(os.path.join(hook_dir, "settings.json"), "w", encoding="utf-8") as handle:
-            handle.write('{"statusLine":{"command":"bash ~/.claude/hooks/tokens-statusline.sh"}}')
-        shutil.copyfile(SCRIPT, os.path.join(hook_dir, "hooks", "tokens_statusline.py"))
-        check("silent once wired and current", "", run_hook())
+    installer = os.path.join(ROOT, "scripts", "install.py")
+    inst_dir = os.path.join(work, "instcfg")
+    os.makedirs(inst_dir, exist_ok=True)
 
-        # `plugin update` refreshes the plugin but not the copy the badge runs.
-        with open(os.path.join(hook_dir, "hooks", "tokens_statusline.py"), "a", encoding="utf-8") as handle:
-            handle.write("# stale\n")
-        contains("warns when the installed copy drifts", "was updated but the copy", run_hook())
+    def run_install(*args):
+        env = dict(os.environ, CLAUDE_CONFIG_DIR=inst_dir)
+        proc = subprocess.run(
+            [sys.executable, installer, *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+        )
+        return proc.stdout, proc.returncode
 
-        open(os.path.join(hook_dir, ".cc-token-statusline-skip"), "w").close()
-        check("skip marker silences everything", "", run_hook())
+    out, code = run_install("--dry-run")
+    check("dry run changes nothing", False, os.path.exists(os.path.join(inst_dir, "settings.json")))
+    check("dry run exits 0", 0, code)
 
-    print("shell syntax")
-    if WINDOWS or shutil.which("bash") is None:
-        skip("shell syntax", "no bash on this platform")
-    else:
-        for name in ("scripts/tokens-statusline.sh", "hooks/setup-check.sh", "install.sh"):
-            path = os.path.join(ROOT, *name.split("/"))
-            code = subprocess.run(["bash", "-n", path], capture_output=True).returncode
-            ok(f"syntax {os.path.basename(name)}") if code == 0 else no(
-                f"syntax {os.path.basename(name)}", "parses", "error"
-            )
+    out, code = run_install()
+    wired = json.load(open(os.path.join(inst_dir, "settings.json"), encoding="utf-8"))
+    command = wired["statusLine"]["command"]
+    check("installs the badge", True, os.path.isfile(os.path.join(inst_dir, "hooks", "tokens_statusline.py")))
+    contains("wires an absolute interpreter", sys.executable.replace("\\", "/"), command)
+    lacks("no bash in the wired command", "bash", command)
+
+    # An unrelated statusLine must survive an install that was not told to replace it.
+    other = os.path.join(work, "othercfg")
+    os.makedirs(other, exist_ok=True)
+    with open(os.path.join(other, "settings.json"), "w", encoding="utf-8") as handle:
+        json.dump({"statusLine": {"type": "command", "command": "ccusage statusline"}}, handle)
+
+    def run_other(*args):
+        env = dict(os.environ, CLAUDE_CONFIG_DIR=other)
+        proc = subprocess.run(
+            [sys.executable, installer, *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=env,
+        )
+        return proc.stdout, proc.returncode
+
+    out, code = run_other()
+    check("refuses to clobber a foreign statusLine", 1, code)
+    contains("explains the refusal", "--replace", out)
+    kept = json.load(open(os.path.join(other, "settings.json"), encoding="utf-8"))
+    check("foreign statusLine untouched", "ccusage statusline", kept["statusLine"]["command"])
+
+    out, code = run_other("--replace")
+    taken = json.load(open(os.path.join(other, "settings.json"), encoding="utf-8"))
+    contains("replace takes it over", "tokens_statusline.py", taken["statusLine"]["command"])
+
+    out, code = run_other("--uninstall")
+    restored = json.load(open(os.path.join(other, "settings.json"), encoding="utf-8"))
+    check("uninstall restores the previous command", "ccusage statusline", restored["statusLine"]["command"])
+    check("uninstall drops its bookkeeping key", False, "_ccTokenStatuslinePrevious" in restored)
 
     print("json manifests")
     for name in (
