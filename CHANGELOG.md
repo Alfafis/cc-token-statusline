@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3
+
+- Project site at https://alfafis.github.io/cc-token-statusline/, served from
+  `docs/` on `main`. Both manifests now point `homepage` at it.
+
 ## 0.2.2
 
 - A malformed `usage` entry in the transcript now costs one entry instead of the

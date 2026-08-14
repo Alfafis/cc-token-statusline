@@ -29,7 +29,8 @@
         "cache",
         "usage",
         "observability"
-      ]
+      ],
+      "homepage": "https://alfafis.github.io/cc-token-statusline/"
     }
   ]
 }
