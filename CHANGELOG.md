@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1
 
 A pass over every OS-specific assumption left in the runtime and the installer.
 
