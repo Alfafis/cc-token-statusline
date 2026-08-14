@@ -22,10 +22,11 @@ from __future__ import annotations
 import filecmp
 import json
 import os
+import re
 import shutil
 import sys
 
-BADGE_NAMES = ("tokens-statusline.sh", "tokens_statusline.py")
+BADGE_NAMES = ("tokens-statusline.sh", "tokens_statusline.py", "statusline_chain.py")
 SKIP_MARKER = ".cc-token-statusline-skip"
 
 
@@ -64,6 +65,35 @@ def find_wiring(cfg: str) -> str | None:
         if any(name in text for name in BADGE_NAMES):
             return text
     return None
+
+
+def drifted_copy(installed: str, shipped: str) -> bool:
+    """True when a file we installed differs from the one the plugin ships."""
+    try:
+        if not (os.path.isfile(installed) and os.path.isfile(shipped)):
+            return False
+        return not filecmp.cmp(installed, shipped, shallow=False)
+    except OSError:
+        return False
+
+
+def missing_interpreter(wiring: str) -> str | None:
+    """The interpreter the wiring names, if it is no longer there to run."""
+    # The wiring is JSON on disk, so its quotes arrive escaped.
+    text = wiring.replace('\\"', '"').replace("\\\\", "\\")
+    match = re.search(
+        r'"([^"]+)"\s+"[^"]*(?:%s)"' % "|".join(re.escape(name) for name in BADGE_NAMES),
+        text,
+    )
+    if not match:
+        return None
+    command = match.group(1)
+    # Only an absolute path can be judged from here. A bare name is resolved
+    # against the PATH of whatever shell Claude Code renders with, which is not
+    # necessarily this one, and a wrong warning is worse than no warning.
+    if not os.path.isabs(command):
+        return None
+    return None if os.path.isfile(command) else command
 
 
 def main() -> int:
@@ -107,19 +137,28 @@ def main() -> int:
         )
         return 0
 
+    # The wired command names an interpreter by absolute path. Python upgrades
+    # move that path (Homebrew and pyenv carry the patch version in it), and a
+    # command that cannot start exits non-zero, which hides the whole status bar.
+    missing = missing_interpreter(wiring)
+    if missing:
+        emit(
+            f"The cc-token-statusline badge is wired to run {missing}, which no longer exists "
+            "on this machine - a python upgrade most likely moved it. That command fails on "
+            "every render, and a failing statusLine command hides the entire status bar, "
+            f"including any other badge. Offer to repair it by running: python3 '{installer}'"
+        )
+        return 0
+
     # The badge runs from a copy under the config directory, not from the
     # plugin's own files: a plugin path carries a version hash and would break on
     # every update. The trade is that `plugin update` never reaches the copy.
-    installed = os.path.join(cfg, "hooks", "tokens_statusline.py")
-    shipped = os.path.join(root, "scripts", "tokens_statusline.py")
-    try:
-        drifted = (
-            os.path.isfile(installed)
-            and os.path.isfile(shipped)
-            and not filecmp.cmp(installed, shipped, shallow=False)
-        )
-    except OSError:
-        drifted = False
+    # The wrapper is checked too - it is half of the install whenever the badge
+    # sits behind somebody else's status line.
+    drifted = any(
+        drifted_copy(os.path.join(cfg, "hooks", name), os.path.join(root, "scripts", name))
+        for name in ("tokens_statusline.py", "statusline_chain.py")
+    )
 
     if drifted:
         emit(

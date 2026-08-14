@@ -177,13 +177,15 @@ could catch.
 * `total_cost_usd` is 0 on subscription plans in some setups. The `cost` segment
   is off by default for that reason, and hides itself rather than showing a
   permanent `$0.00` when enabled.
-* The cache directory grows one small file per session and is never pruned.
+* The cache directory holds one small file per session; files untouched for 30
+  days are deleted the next time a new session appears.
 * The status line runs a copy under `~/.claude/hooks`, not the plugin's own
   files — a plugin path carries a version hash and would break on every update.
   So `plugin update` does not reach the badge; the SessionStart hook notices the
   drift and offers to re-run the installer.
-* Terminal width is read from `COLUMNS` and falls back to 80 columns — stdout is
-  a pipe, so a wide terminal may drop segments it had room for. Set
-  `CC_TOKENS_WIDTH` to pin it.
+* Terminal width comes from the first terminal in reach: stderr, stdout, stdin,
+  then the console device itself (`/dev/tty`, `CONOUT$` on Windows). `COLUMNS` is
+  used only when none of those is a terminal, and 80 columns is the last resort.
+  Set `CC_TOKENS_WIDTH` to pin it.
 * Consoles that cannot encode the box-drawing and arrow glyphs (Windows `cp1252`)
   get the ASCII set automatically. Output is written as UTF-8 regardless.

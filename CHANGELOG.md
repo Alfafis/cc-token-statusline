@@ -1,5 +1,39 @@
 # Changelog
 
+## Unreleased
+
+A pass over every OS-specific assumption left in the runtime and the installer.
+
+- **Fixed: re-running the installer deleted a wrapped status line.** The second
+  run saw its own wrapper in `settings.json`, decided the badge was already
+  installed and pointed `statusLine` straight at it — silently dropping whatever
+  third-party command it had been running first. Refreshing the copy after a
+  plugin update is exactly what the SessionStart hook asks people to do, so an
+  upgrade could take someone's ccusage or powerline badge with it.
+- **Fixed: the badge assumed an 80 column terminal everywhere.** Width was
+  measured on stdout, which Claude Code always captures, so the measurement
+  always failed into the fallback and segments were dropped on terminals with
+  plenty of room. Width now comes from stderr, stdout, stdin, or the console
+  device (`/dev/tty`, `CONOUT$`), with `COLUMNS` and 80 as the last resorts.
+- **Fixed: the wired interpreter path could stop existing.** Homebrew and pyenv
+  put the patch version in the path `sys.executable` reports, so a routine python
+  upgrade left `statusLine` pointing at a deleted binary — and a command that
+  cannot start hides the whole status bar. The installer now prefers a launcher
+  on `PATH`, and the SessionStart hook flags an absolute interpreter that has
+  gone missing.
+- **Fixed: the chain wrapper could still crash on a Windows console.** Our own
+  glyphs already degrade to ASCII, but the wrapped command's output passed
+  through untouched, so a box-drawing character in someone else's badge raised
+  `UnicodeEncodeError` outside the guard.
+- `--replace` over a wrapped install now forgets what it unwrapped, so a later
+  refresh cannot resurrect it.
+- `/token-report` no longer assumes `python3`, `~` expansion, or POSIX path
+  slugs; the SessionStart hook tries the `py` launcher before bare `python`,
+  which on Windows is often a Microsoft Store stub.
+- Cache files untouched for 30 days are pruned when a new session appears.
+- Tests: the wired command is now executed through the platform shell from a
+  path containing spaces, which is how `cmd.exe` quoting bugs actually show up.
+
 ## 0.4.0
 
 - **Labels are English by default**, switchable with `CC_TOKENS_LANG=pt` for the

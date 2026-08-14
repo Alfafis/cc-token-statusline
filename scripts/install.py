@@ -22,9 +22,11 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import functools
 import json
 import os
 import shutil
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -64,9 +66,40 @@ def save_settings(path: str, settings: dict) -> None:
         handle.write("\n")
 
 
+@functools.lru_cache(maxsize=1)
+def interpreter() -> str:
+    """The python this badge should be launched with, for years, not for today.
+
+    `sys.executable` points at the real binary, which on Homebrew and pyenv
+    carries the patch version in its path (.../3.13.1/...). A patch upgrade
+    deletes it, the status line command then fails on every render, and a failing
+    command hides the whole status bar - other badges included. A launcher on
+    PATH survives that, and the badge is pure stdlib, so any modern python runs
+    it. Windows is the exception: `python`/`python3` there are often Microsoft
+    Store stubs that print an ad instead of running the script.
+    """
+    if os.name == "nt":
+        return sys.executable
+    for name in ("python3", "python"):
+        candidate = shutil.which(name)
+        if not candidate:
+            continue
+        try:
+            probe = subprocess.run(
+                [candidate, "-c", "import sys; print(sys.version_info[0], sys.version_info[1])"],
+                capture_output=True, text=True, timeout=10,
+            )
+            major, minor = (int(part) for part in probe.stdout.split())
+        except (OSError, ValueError, subprocess.SubprocessError):
+            continue
+        if (major, minor) >= (3, 8):
+            return candidate
+    return sys.executable
+
+
 def command_for(cfg: str, script_name: str) -> str:
     script = os.path.join(cfg, "hooks", script_name).replace("\\", "/")
-    python = sys.executable.replace("\\", "/")
+    python = interpreter().replace("\\", "/")
     return f'"{python}" "{script}"'
 
 
@@ -82,6 +115,17 @@ def describe(command) -> str:
     return command if isinstance(command, str) else json.dumps(command)
 
 
+def chained_previous(hooks: str) -> str:
+    """The third-party command the installed wrapper runs before the badge."""
+    try:
+        with open(os.path.join(hooks, CHAIN_CONFIG), "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return ""
+    command = data.get("previous") if isinstance(data, dict) else None
+    return command if isinstance(command, str) else ""
+
+
 def install(cfg: str, replace: bool, dry_run: bool) -> int:
     hooks = os.path.join(cfg, "hooks")
     settings_path = os.path.join(cfg, "settings.json")
@@ -90,20 +134,30 @@ def install(cfg: str, replace: bool, dry_run: bool) -> int:
     existing_command = (existing or {}).get("command", "") if isinstance(existing, dict) else ""
 
     already_ours = any(name in str(existing_command) for name in BADGE_NAMES)
+    # Re-running the installer is the documented way to refresh the copy after a
+    # plugin update, so it must not quietly unwrap a status line it already
+    # wraps: the wrapped command would vanish from settings.json and the user
+    # would lose someone else's badge to an upgrade.
+    wrapped = chained_previous(hooks)
+    already_chained = CHAIN in str(existing_command) and bool(wrapped)
     # Someone else's status line is wrapped, not overwritten: Claude Code allows
     # exactly one command, and refusing to install was the old behavior that made
     # this plugin unusable next to ccusage, powerline and hand-rolled scripts.
-    chaining = bool(existing_command) and not already_ours and not replace
+    fresh_chain = bool(existing_command) and not already_ours
+    chaining = (fresh_chain or already_chained) and not replace
 
     if dry_run:
         print(f"would copy   {os.path.join(ROOT, 'scripts', BADGE)}")
         print(f"          -> {os.path.join(hooks, BADGE)}")
         if chaining:
-            print(f"would keep   {describe(existing_command)} and append the badge after it")
+            kept = existing_command if fresh_chain else wrapped
+            print(f"would keep   {describe(kept)} and append the badge after it")
             print(f"would set    statusLine = {chain_command(cfg)}")
         else:
             if existing_command and not already_ours:
                 print(f"would drop   {describe(existing_command)}")
+            elif already_chained:
+                print(f"would drop   {describe(wrapped)}")
             print(f"would set    statusLine = {badge_command(cfg)}")
         return 0
 
@@ -113,11 +167,22 @@ def install(cfg: str, replace: bool, dry_run: bool) -> int:
 
     if chaining:
         shutil.copyfile(os.path.join(ROOT, "scripts", CHAIN), os.path.join(hooks, CHAIN))
-        with open(os.path.join(hooks, CHAIN_CONFIG), "w", encoding="utf-8") as handle:
-            json.dump({"previous": existing_command}, handle, indent=2)
-        print(f"chaining:  {describe(existing_command)}")
+        if fresh_chain:
+            # Only ever record a command that is not ours. Writing the wrapper's
+            # own command here would make it run itself, forever.
+            with open(os.path.join(hooks, CHAIN_CONFIG), "w", encoding="utf-8") as handle:
+                json.dump({"previous": existing_command}, handle, indent=2)
+        print(f"chaining:  {describe(existing_command if fresh_chain else wrapped)}")
         command = chain_command(cfg)
     else:
+        # --replace on a wrapped install drops the wrapped command for good; a
+        # stale record would resurrect it on the next refresh.
+        if already_chained:
+            print(f"dropped:   {describe(wrapped)}")
+            for name in (CHAIN, CHAIN_CONFIG):
+                path = os.path.join(hooks, name)
+                if os.path.isfile(path):
+                    os.remove(path)
         command = badge_command(cfg)
     if existing_command == command:
         print("statusLine already points at it, nothing to change")
@@ -162,7 +227,7 @@ def uninstall(cfg: str, dry_run: bool) -> int:
     settings.pop("_ccTokenStatuslinePrevious", None)
     save_settings(settings_path, settings)
 
-    for name in (BADGE, CHAIN, CHAIN_CONFIG):
+    for name in (BADGE, CHAIN, CHAIN_CONFIG, LEGACY_BADGE):
         path = os.path.join(cfg, "hooks", name)
         if os.path.isfile(path):
             os.remove(path)

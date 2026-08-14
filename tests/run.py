@@ -109,6 +109,20 @@ def badge(stdin: str, width="400", **env_extra) -> str:
     return proc.stdout
 
 
+def terminal_reachable() -> bool:
+    """Can a child with every descriptor piped still find a console?"""
+    probe = (
+        "import os\n"
+        "try:\n"
+        "    f = open('CONOUT$' if os.name == 'nt' else '/dev/tty', 'rb', buffering=0)\n"
+        "    print(os.get_terminal_size(f.fileno()).columns)\n"
+        "except Exception:\n"
+        "    print(0)\n"
+    )
+    proc = subprocess.run([sys.executable, "-c", probe], input="", capture_output=True, text=True)
+    return proc.stdout.strip() not in ("", "0")
+
+
 def run_raw(stdin: str):
     proc = subprocess.run(
         [sys.executable, SCRIPT],
@@ -223,6 +237,32 @@ def suite(work: str) -> int:
     out = badge(payload(FIXTURE, session="r5"), CC_TOKENS_SEGMENTS="ctx,limits")
     contains("limits still aliases quota", "quota 5h 34%", out)
 
+    # Claude Code captures stdout, so measuring it always answered "80 columns"
+    # and trimmed the badge to fit a terminal nobody was using. No descriptor is
+    # a terminal here either, which is exactly when COLUMNS has to be believed.
+    def sized(columns: str, session: str) -> str:
+        env = dict(os.environ, NO_COLOR="1", COLUMNS=columns, CC_TOKENS_RESERVE="0")
+        env.pop("CC_TOKENS_WIDTH", None)
+        proc = subprocess.run(
+            [sys.executable, SCRIPT],
+            input=payload(FIXTURE, session=session),
+            capture_output=True, text=True, encoding="utf-8", env=env,
+        )
+        return proc.stdout
+
+    if terminal_reachable():
+        # A real terminal outranks COLUMNS on purpose - it cannot go stale - so
+        # these assertions only mean something where there is none. CI has none.
+        for name in ("a wide terminal keeps more of the badge",
+                     "a narrow terminal is still respected",
+                     "width comes from the environment, not the pipe"):
+            skip(name, "a console is reachable from here")
+    else:
+        wide, narrow = sized("400", "w_wide"), sized("46", "w_narrow")
+        check("a wide terminal keeps more of the badge", True, len(wide) > len(narrow))
+        check("a narrow terminal is still respected", True, len(narrow) <= 46)
+        contains("width comes from the environment, not the pipe", "api ", wide)
+
     print("language")
 
     out = badge(payload(FIXTURE, session="lang_en"))
@@ -331,6 +371,20 @@ def suite(work: str) -> int:
     contains("warns when the installed copy drifts", "was updated but the copy", run_hook())
     shutil.copyfile(SCRIPT, os.path.join(hook_dir, "hooks", "tokens_statusline.py"))
 
+    # A python upgrade moves the interpreter the wiring names. The command then
+    # cannot start, and a statusLine that exits non-zero hides the whole bar.
+    gone = os.path.join(hook_dir, "no-such-python")
+    with open(settings, "w", encoding="utf-8") as handle:
+        json.dump({"statusLine": {"command": f'"{gone}" "~/.claude/hooks/tokens_statusline.py"'}}, handle)
+    contains("flags an interpreter that no longer exists", "no longer exists", run_hook())
+    with open(settings, "w", encoding="utf-8") as handle:
+        json.dump({"statusLine": {"command": f'"{sys.executable}" "~/.claude/hooks/tokens_statusline.py"'}}, handle)
+    check("quiet while the interpreter is there", "", run_hook())
+    # A bare name is resolved by a shell this hook cannot see - never guess.
+    with open(settings, "w", encoding="utf-8") as handle:
+        json.dump({"statusLine": {"command": '"python" "~/.claude/hooks/tokens_statusline.py"'}}, handle)
+    check("never guesses about a bare interpreter name", "", run_hook())
+
     # Wired through bash on a machine without bash: that command fails on every
     # render, and a failing statusLine hides the whole bar.
     with open(settings, "w", encoding="utf-8") as handle:
@@ -370,8 +424,31 @@ def suite(work: str) -> int:
     wired = json.load(open(os.path.join(inst_dir, "settings.json"), encoding="utf-8"))
     command = wired["statusLine"]["command"]
     check("installs the badge", True, os.path.isfile(os.path.join(inst_dir, "hooks", "tokens_statusline.py")))
-    contains("wires an absolute interpreter", sys.executable.replace("\\", "/"), command)
+    # The path is deliberately not sys.executable: a launcher on PATH outlives the
+    # patch-versioned real binary that Homebrew and pyenv hand out.
+    interpreter = command.split('" "')[0].lstrip('"')
+    check("wires an absolute interpreter", True, os.path.isabs(interpreter))
+    check("wires an interpreter that exists", True, os.path.isfile(interpreter))
+    probe = subprocess.run([interpreter, "-c", "print(1)"], capture_output=True, text=True)
+    check("wires an interpreter that runs", "1", probe.stdout.strip())
     lacks("no bash in the wired command", "bash", command)
+
+    # Claude Code hands this string to the platform shell, so the quoting has to
+    # survive cmd.exe as well as sh - a path with a space in it is the usual way
+    # a wired command dies, and it dies by hiding the whole status bar.
+    spaced = os.path.join(work, "space in path cfg")
+    os.makedirs(spaced, exist_ok=True)
+    subprocess.run([sys.executable, installer], capture_output=True,
+                   env=dict(os.environ, CLAUDE_CONFIG_DIR=spaced))
+    spaced_command = json.load(
+        open(os.path.join(spaced, "settings.json"), encoding="utf-8"))["statusLine"]["command"]
+    shell_env = dict(os.environ, CLAUDE_CONFIG_DIR=spaced, NO_COLOR="1", CC_TOKENS_WIDTH="400")
+    through_shell = subprocess.run(
+        spaced_command, shell=True, input=payload(FIXTURE, session="shell"),
+        capture_output=True, text=True, encoding="utf-8", env=shell_env,
+    )
+    check("the wired command runs in the platform shell", 0, through_shell.returncode)
+    contains("and prints the badge from there", "ctx 93k/1M 9%", through_shell.stdout)
 
     # Claude Code allows one statusLine command, so someone else's is wrapped
     # rather than replaced. Refusing to install was the old behavior and it made
@@ -404,6 +481,16 @@ def suite(work: str) -> int:
     saved = json.load(open(os.path.join(other, "hooks", "cc-token-statusline-chain.json"), encoding="utf-8"))
     check("records what it wrapped", "echo PREVIOUS", saved["previous"])
 
+    # Re-running the installer is how a plugin update reaches the installed copy,
+    # and the SessionStart hook tells people to do it. It used to unwrap the
+    # chain on that second run, deleting a third-party status line by upgrade.
+    out, code = run_other()
+    refreshed = json.load(open(settings_other, encoding="utf-8"))
+    contains("a refresh keeps the wrapper", "statusline_chain.py", refreshed["statusLine"]["command"])
+    saved = json.load(open(os.path.join(other, "hooks", "cc-token-statusline-chain.json"), encoding="utf-8"))
+    check("a refresh keeps what was wrapped", "echo PREVIOUS", saved["previous"])
+    lacks("a refresh never wraps itself", "statusline_chain.py", saved["previous"])
+
     def run_chain(cfg, **extra):
         env = dict(os.environ, CLAUDE_CONFIG_DIR=cfg, NO_COLOR="1", CC_TOKENS_WIDTH="400", **extra)
         proc = subprocess.run(
@@ -429,6 +516,25 @@ def suite(work: str) -> int:
     check("chain survives a broken wrapped command", 0, code)
     contains("badge still renders when the wrapped command fails", "ctx 93k/1M 9%", out)
 
+    # The wrapped status line's own glyphs reach stdout untouched. On a console
+    # that refuses UTF-8 they must degrade, not raise: a non-zero exit here would
+    # hide every status line, not just the foreign one.
+    probe = (
+        "import io, sys;"
+        f"sys.path.insert(0, {os.path.join(other, 'hooks')!r});"
+        "buf = io.TextIOWrapper(io.BytesIO(), encoding='cp1252');"
+        "import statusline_chain;"
+        "sys.stdout = buf;"
+        "statusline_chain.write('\\u2500 foreign \\u2191');"
+        "sys.stdout = sys.__stdout__;"
+        "buf.seek(0);"
+        "print(buf.buffer.getvalue().decode('cp1252'))"
+    )
+    proc = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True,
+                          encoding="utf-8", env=dict(os.environ, CLAUDE_CONFIG_DIR=other))
+    check("chain does not raise on a cp1252 console", 0, proc.returncode)
+    contains("chain still emits the wrapped text there", "foreign", proc.stdout)
+
     out, code = run_other("--uninstall")
     restored = json.load(open(settings_other, encoding="utf-8"))
     check("uninstall restores the previous command", "echo PREVIOUS", restored["statusLine"]["command"])
@@ -446,6 +552,24 @@ def suite(work: str) -> int:
     taken = json.load(open(os.path.join(replaced, "settings.json"), encoding="utf-8"))
     contains("replace points straight at the badge", "tokens_statusline.py", taken["statusLine"]["command"])
     lacks("replace does not chain", "statusline_chain.py", taken["statusLine"]["command"])
+
+    # --replace over a wrapped install is the way out of chaining. The record of
+    # what was wrapped has to go with it, or the next refresh resurrects it.
+    unwrap = os.path.join(work, "unwrapcfg")
+    os.makedirs(unwrap, exist_ok=True)
+    with open(os.path.join(unwrap, "settings.json"), "w", encoding="utf-8") as handle:
+        json.dump({"statusLine": {"type": "command", "command": "echo PREVIOUS"}}, handle)
+    env = dict(os.environ, CLAUDE_CONFIG_DIR=unwrap)
+    subprocess.run([sys.executable, installer], capture_output=True, env=env)
+    subprocess.run([sys.executable, installer, "--replace"], capture_output=True, env=env)
+    unwrapped = json.load(open(os.path.join(unwrap, "settings.json"), encoding="utf-8"))
+    lacks("replace unwraps an existing chain", "statusline_chain.py", unwrapped["statusLine"]["command"])
+    check("replace forgets what was wrapped", False,
+          os.path.exists(os.path.join(unwrap, "hooks", "cc-token-statusline-chain.json")))
+    subprocess.run([sys.executable, installer], capture_output=True, env=env)
+    again = json.load(open(os.path.join(unwrap, "settings.json"), encoding="utf-8"))
+    lacks("a later refresh does not resurrect the chain", "statusline_chain.py",
+          again["statusLine"]["command"])
 
     print("json manifests")
     for name in (
