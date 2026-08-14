@@ -22,9 +22,9 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 
 # Assistant entries repeat in the transcript - the same request shows up once per
@@ -39,6 +39,9 @@ COLD_START_TAIL = 8 * 1024 * 1024
 
 # Bounded so the cache file cannot grow without limit in a very long session.
 MAX_SEEN_IDS = 50_000
+
+# One cache file is written per session; without this the directory only grows.
+CACHE_TTL_DAYS = 30
 
 # `cost` is implemented but off by default: on subscription plans it reports 0,
 # and the columns it costs buy both quota windows instead - the quota is what
@@ -198,8 +201,32 @@ def load_cache(path: str) -> dict:
     return state
 
 
+def prune_cache(directory: str) -> None:
+    """Drop cache files for sessions nobody will resume.
+
+    One file is written per session and nothing else ever deletes them, so this
+    directory grows for as long as the plugin is installed. Only run when a new
+    session appears, never on the hot path.
+    """
+    cutoff = time.time() - CACHE_TTL_DAYS * 86400
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return
+    for name in names:
+        if not (name.startswith("tokens-") and name.endswith(".json")):
+            continue
+        stale = os.path.join(directory, name)
+        try:
+            if os.path.getmtime(stale) < cutoff:
+                os.remove(stale)
+        except OSError:
+            continue
+
+
 def save_cache(path: str, state: dict) -> None:
     directory = os.path.dirname(path)
+    first_write = not os.path.exists(path)
     try:
         os.makedirs(directory, exist_ok=True)
         # Atomic: two sessions can render at once, and a half-written cache would
@@ -212,7 +239,9 @@ def save_cache(path: str, state: dict) -> None:
             tmp_path = tmp.name
         os.replace(tmp_path, path)
     except OSError:
-        pass
+        return
+    if first_write:
+        prune_cache(directory)
 
 
 def accumulate(totals: dict, usage: dict, is_sidechain: bool) -> None:
@@ -512,11 +541,42 @@ def selected_segments() -> list[str]:
     return [name for name in names if name in ALL_SEGMENTS]
 
 
+def terminal_columns() -> int:
+    """Width of the terminal this badge will be drawn in.
+
+    `shutil.get_terminal_size` measures stdout, which is always a pipe here -
+    Claude Code captures what we print - so it always answered with its 80 column
+    fallback and the badge was trimmed to fit a terminal nobody was using. stderr
+    is normally still attached to the real terminal, so it is asked first, and
+    COLUMNS is trusted only when no descriptor is a terminal.
+    """
+    for stream in (sys.stderr, sys.stdout, sys.stdin):
+        try:
+            columns = os.get_terminal_size(stream.fileno()).columns
+        except (AttributeError, OSError, ValueError):
+            continue
+        if columns > 0:
+            return columns
+    # Nothing we were handed is a terminal, but Claude Code owns one. Ask the
+    # console device directly - "CONOUT$" is the Windows spelling of /dev/tty.
+    try:
+        with open("CONOUT$" if os.name == "nt" else "/dev/tty", "rb", buffering=0) as tty:
+            columns = os.get_terminal_size(tty.fileno()).columns
+        if columns > 0:
+            return columns
+    except (OSError, ValueError):
+        pass
+    env = os.environ.get("COLUMNS", "")
+    if env.isdigit() and int(env) > 0:
+        return int(env)
+    return 80
+
+
 def available_width() -> int:
     override = os.environ.get("CC_TOKENS_WIDTH")
     if override and override.isdigit():
         return int(override)
-    columns = shutil.get_terminal_size(fallback=(80, 24)).columns
+    columns = terminal_columns()
     # Other badges share the line, so the whole width is never ours.
     reserve = os.environ.get("CC_TOKENS_RESERVE", "34")
     reserve = int(reserve) if reserve.isdigit() else 34

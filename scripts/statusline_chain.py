@@ -68,6 +68,30 @@ def run_previous(command: str, payload: str) -> str:
     return (proc.stdout or "").strip("\r\n")
 
 
+def write(line: str) -> None:
+    """Write the line, degrading rather than raising.
+
+    Our own glyphs already fall back to ASCII when the console cannot encode
+    them, but the previous status line's output passes through here untouched.
+    A cp1252 stdout plus one box-drawing character in someone else's badge would
+    raise on the way out, and a non-zero exit hides the whole status bar.
+    """
+    try:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        return
+    except UnicodeEncodeError:
+        pass
+    except Exception:
+        return
+    encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+    try:
+        sys.stdout.write(line.encode(encoding, "replace").decode(encoding, "replace"))
+        sys.stdout.flush()
+    except Exception:
+        pass
+
+
 def main() -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -98,8 +122,7 @@ def main() -> int:
 
     line = " ".join(part for part in parts if part)
     if line:
-        sys.stdout.write(line)
-        sys.stdout.flush()
+        write(line)
     return 0
 
 
