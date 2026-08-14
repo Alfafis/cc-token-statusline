@@ -11,9 +11,9 @@ needs attention instead of reading the same at 9% and at 82%.
 
 | Key | Label | Meaning | Source |
 | --- | --- | --- | --- |
-| `ctx` | `token` | context window used / size, colored by pressure | payload |
-| `quota` | `cota` | account rate limits, 5h and 7d windows | payload |
-| `tok` | `gasto` | cumulative billed input / output tokens for the session | transcript |
+| `ctx` | `ctx` | context window used / size, colored by pressure | payload |
+| `quota` | `quota` | account rate limits, 5h and 7d windows | payload |
+| `tok` | `spent` | cumulative billed input / output tokens for the session | transcript |
 | `cache` | `cache` | share of billed input served from cache — higher is better | transcript |
 | `sub` | `sub` | tokens spent by subagents (sidechain entries) | transcript |
 | `lines` | `+ -` | lines added / removed | payload |
@@ -21,9 +21,11 @@ needs attention instead of reading the same at 9% and at 82%.
 | `cost` | `$` | session cost — **off by default**, see below | payload |
 
 Keys are the stable identifiers used in `CC_TOKENS_SEGMENTS`; labels are only
-what gets printed. `limits` is accepted as an alias for `quota`.
+what gets printed, and they are translated — `CC_TOKENS_LANG=pt` renders `token`,
+`cota` and `gasto` instead. Keys never change with the language, so a switch
+cannot break an existing config. `limits` is accepted as an alias for `quota`.
 
-`cota` is the account rate limit, not a per-session budget: both windows are
+`quota` is the account rate limit, not a per-session budget: both windows are
 account-wide, shared across every session and machine, and neither resets when
 you start a new session. Each window is colored on its own clock, and they are
 split by `│` rather than the `·` used between segments — same segment, two
@@ -32,7 +34,7 @@ crosses 70%, the reset time for the tight one is appended — the only actionabl
 fact at that point:
 
 ```
-[token 780k/1M 78% · cota 5h 41% │ 7d 82% ~2h11m · gasto ↑2.4M ↓33k · cache 71%]
+[ctx 780k/1M 78% · quota 5h 41% │ 7d 82% ~2h11m · spent ↑2.4M ↓33k · cache 71%]
 ```
 
 The segment disappears entirely when the payload carries no `rate_limits`
@@ -82,7 +84,7 @@ wrapped rather than replaced: it runs first, with the same payload on stdin, and
 the badge is appended to whatever it prints.
 
 ```
-ccusage output here  [token 93k/1M 9% · cota 5h 34% │ 7d 12% · cache 99%]
+ccusage output here  [ctx 93k/1M 9% · quota 5h 34% │ 7d 12% · cache 99%]
 ```
 
 The wrapped command gets a 2 second timeout (`CC_TOKENS_CHAIN_TIMEOUT`) and its
@@ -101,6 +103,7 @@ All via environment variables (settable in the `env` block of `settings.json`):
 
 | Variable | Default | Effect |
 | --- | --- | --- |
+| `CC_TOKENS_LANG` | `en` | label language: `en` or `pt`. Unknown values fall back to `en`. |
 | `CC_TOKENS_SEGMENTS` | `ctx,quota,tok,cache,sub,lines,api` | which segments, in order. Add `cost` for the dollar figure. |
 | `CC_TOKENS_WIDTH` | terminal width − reserve | hard cap on badge width |
 | `CC_TOKENS_RESERVE` | `34` | columns left for other badges |

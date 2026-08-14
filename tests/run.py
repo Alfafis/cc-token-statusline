@@ -191,16 +191,16 @@ def suite(work: str) -> int:
             '{"usage":{"input_tokens":1,"cache_read_input_tokens":9,"output_tokens":2}}}\n'
         )
     out = badge(payload(poisoned, session="poison"))
-    contains("survives a malformed usage entry", "gasto", out)
+    contains("survives a malformed usage entry", "spent", out)
     lacks("no escape sequence leaks through", "nope", out)
     check("bad entry skipped, good one kept", 3, totals("poison", "requests"))
 
     print("rendering")
 
     out = badge(payload(FIXTURE, session="r1"))
-    contains("wrapped in one bracket", "[token 93k/1M 9% \u00b7", out)
+    contains("wrapped in one bracket", "[ctx 93k/1M 9% \u00b7", out)
     contains("ends with bracket", "api 1m12s]", out)
-    contains("quota shows both windows", "cota 5h 34% \u2502 7d 12%", out)
+    contains("quota shows both windows", "quota 5h 34% \u2502 7d 12%", out)
     lacks("no reset while quota is low", "~", out)
     lacks("cost is off by default", "1.23", out)
 
@@ -208,20 +208,42 @@ def suite(work: str) -> int:
     contains("cost still available on request", "$1.23", out)
 
     out = badge(payload(FIXTURE, used=780000, pct=78, pct5=41, pct7=82, session="r2"))
-    contains("both windows kept when one is tight", "cota 5h 41% \u2502 7d 82%", out)
+    contains("both windows kept when one is tight", "quota 5h 41% \u2502 7d 82%", out)
     contains("one reset, for the tight window", "~2h1", out)
     check("only one reset shown", 1, out.count("~"))
 
     out = badge(payload(FIXTURE, pct5=-1, pct7=-1, session="r3"))
-    lacks("quota absent without rate_limits", "cota", out)
+    lacks("quota absent without rate_limits", "quota", out)
 
     out = badge(payload(FIXTURE, session="r4"), width="46")
-    contains("narrow keeps context first", "[token 93k/1M 9%", out)
+    contains("narrow keeps context first", "[ctx 93k/1M 9%", out)
     lacks("narrow drops api", "api", out)
     check("narrow respects width", True, len(out) <= 46)
 
     out = badge(payload(FIXTURE, session="r5"), CC_TOKENS_SEGMENTS="ctx,limits")
-    contains("limits still aliases quota", "cota 5h 34%", out)
+    contains("limits still aliases quota", "quota 5h 34%", out)
+
+    print("language")
+
+    out = badge(payload(FIXTURE, session="lang_en"))
+    for label in ("ctx ", "quota ", "spent ", "cache "):
+        contains(f"default is english: {label.strip()}", label, out)
+
+    out = badge(payload(FIXTURE, session="lang_pt"), CC_TOKENS_LANG="pt")
+    contains("pt renames context", "token 93k/1M", out)
+    contains("pt renames quota", "cota 5h", out)
+    contains("pt renames the running total", "gasto ", out)
+
+    out = badge(payload(FIXTURE, session="lang_ptbr"), CC_TOKENS_LANG="pt-BR")
+    contains("regional tags resolve to the base language", "cota 5h", out)
+
+    out = badge(payload(FIXTURE, session="lang_junk"), CC_TOKENS_LANG="klingon")
+    contains("unknown language falls back to english", "quota 5h", out)
+
+    # Keys are the config API; translating them would break people's settings.
+    out = badge(payload(FIXTURE, session="lang_keys"), CC_TOKENS_LANG="pt", CC_TOKENS_SEGMENTS="ctx,quota")
+    contains("segment keys stay english under pt", "token 93k/1M", out)
+    lacks("segment keys are not translated away", "spent", out)
 
     print("encoding")
 
@@ -239,11 +261,11 @@ def suite(work: str) -> int:
         env=env,
     )
     check("legacy console encoding exits 0", 0, proc.returncode)
-    contains("legacy console encoding still renders", "token 93k/1M 9%", proc.stdout)
+    contains("legacy console encoding still renders", "ctx 93k/1M 9%", proc.stdout)
 
     out = badge(payload(FIXTURE, session="ascii"), CC_TOKENS_ASCII="1")
-    contains("ascii mode uses a plain bar", "cota 5h 34% | 7d 12%", out)
-    contains("ascii mode uses caret and vee", "gasto ^", out)
+    contains("ascii mode uses a plain bar", "quota 5h 34% | 7d 12%", out)
+    contains("ascii mode uses caret and vee", "spent ^", out)
     for glyph in ("·", "│", "↑", "↓"):
         lacks(f"ascii mode drops {glyph!r}", glyph, out)
 
@@ -271,7 +293,7 @@ def suite(work: str) -> int:
             }
         )
     )
-    check("missing transcript still renders context", "[token 100/1k 10%]", out)
+    check("missing transcript still renders context", "[ctx 100/1k 10%]", out)
 
     print("setup hook")
 
@@ -397,15 +419,15 @@ def suite(work: str) -> int:
     out, code = run_chain(other)
     check("chain exits 0", 0, code)
     contains("chain keeps the wrapped output", "PREVIOUS", out)
-    contains("chain appends the badge", "token 93k/1M 9%", out)
-    check("wrapped output comes first", True, out.index("PREVIOUS") < out.index("token"))
+    contains("chain appends the badge", "ctx 93k/1M 9%", out)
+    check("wrapped output comes first", True, out.index("PREVIOUS") < out.index("ctx"))
 
     # A broken third-party status line must cost its own output and nothing else.
     with open(os.path.join(other, "hooks", "cc-token-statusline-chain.json"), "w", encoding="utf-8") as handle:
         json.dump({"previous": "definitely-not-a-real-command --nope"}, handle)
     out, code = run_chain(other)
     check("chain survives a broken wrapped command", 0, code)
-    contains("badge still renders when the wrapped command fails", "token 93k/1M 9%", out)
+    contains("badge still renders when the wrapped command fails", "ctx 93k/1M 9%", out)
 
     out, code = run_other("--uninstall")
     restored = json.load(open(settings_other, encoding="utf-8"))

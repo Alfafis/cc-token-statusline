@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- **Labels are English by default**, switchable with `CC_TOKENS_LANG=pt` for the
+  previous `token` / `cota` / `gasto`. Regional tags like `pt-BR` resolve to the
+  base language and anything unknown falls back to English.
+- Segment keys (`ctx`, `quota`, `tok`, ...) are unchanged and never translated —
+  they are the API `CC_TOKENS_SEGMENTS` speaks, so switching language cannot
+  break an existing config.
+
 ## 0.3.0
 
 Windows support, proven by CI rather than assumed.

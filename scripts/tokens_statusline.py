@@ -73,7 +73,25 @@ def glyphs() -> dict:
     return GLYPHS_UNICODE
 
 
-G = GLYPHS_UNICODE  # replaced in main() once the output encoding is known
+G = GLYPHS_UNICODE  # replaced once the output encoding is known
+
+# Labels are translated; segment keys are not. The keys are the stable API used
+# by CC_TOKENS_SEGMENTS, so a language switch can never break someone's config.
+LABELS = {
+    "en": {"ctx": "ctx", "quota": "quota", "tok": "spent", "cache": "cache", "sub": "sub", "api": "api"},
+    "pt": {"ctx": "token", "quota": "cota", "tok": "gasto", "cache": "cache", "sub": "sub", "api": "api"},
+}
+DEFAULT_LANG = "en"
+
+
+def language() -> str:
+    lang = (os.environ.get("CC_TOKENS_LANG") or DEFAULT_LANG).strip().lower()
+    # Accept "pt-BR" and friends; fall back rather than render half a badge.
+    lang = lang.split("-")[0].split("_")[0]
+    return lang if lang in LABELS else DEFAULT_LANG
+
+
+L = LABELS[DEFAULT_LANG]
 
 C_RESET = "\033[0m"
 C_DIM = "\033[2m"
@@ -334,7 +352,7 @@ def seg_ctx(payload: dict, totals: dict | None) -> str:
         return ""
     if pct is None:
         pct = used / size * 100
-    body = f"token {fmt_tokens(used)}/{fmt_tokens(size)} {pct:.0f}%"
+    body = f"{L['ctx']} {fmt_tokens(used)}/{fmt_tokens(size)} {pct:.0f}%"
     return paint(body, pct_color(float(pct)))
 
 
@@ -357,7 +375,7 @@ def seg_tok(payload: dict, totals: dict | None) -> str:
         return ""
     mark = G["approx"] if totals.get("partial") else ""
     body = (
-        f"gasto {mark}{G['up']}{fmt_tokens(billed_in)}"
+        f"{L['tok']} {mark}{G['up']}{fmt_tokens(billed_in)}"
         f" {G['down']}{fmt_tokens(totals['output'])}"
     )
     return paint(body, C_GRAY)
@@ -372,7 +390,7 @@ def seg_cache(payload: dict, totals: dict | None) -> str:
     hit = totals["cache_read"] / billed_in * 100
     # High is good here, so the thresholds are inverted relative to context usage.
     color = C_GREEN if hit >= 80 else (C_YELLOW if hit >= 50 else C_RED)
-    return paint(f"cache {hit:.0f}%", color)
+    return paint(f"{L['cache']} {hit:.0f}%", color)
 
 
 def seg_sub(payload: dict, totals: dict | None) -> str:
@@ -384,7 +402,7 @@ def seg_sub(payload: dict, totals: dict | None) -> str:
     total = billed_in + totals["sub_output"]
     if not total:
         return ""
-    return paint(f"sub {fmt_tokens(total)}", C_GRAY)
+    return paint(f"{L['sub']} {fmt_tokens(total)}", C_GRAY)
 
 
 def seg_lines(payload: dict, totals: dict | None) -> str:
@@ -407,7 +425,7 @@ def seg_api(payload: dict, totals: dict | None) -> str:
     ms = cost.get("total_api_duration_ms")
     if not ms:
         return ""
-    return paint(f"api {fmt_duration(float(ms))}", C_GRAY)
+    return paint(f"{L['api']} {fmt_duration(float(ms))}", C_GRAY)
 
 
 def parse_reset(value) -> datetime | None:
@@ -455,7 +473,7 @@ def seg_quota(payload: dict, totals: dict | None) -> str:
         return ""
 
     glue = f" {paint(G['quota_sep'], C_DIM)} "
-    body = paint("cota", C_GRAY) + " " + glue.join(
+    body = paint(L["quota"], C_GRAY) + " " + glue.join(
         paint(f"{label} {pct:.0f}%", pct_color(pct)) for pct, label, _ in windows
     )
 
@@ -586,13 +604,14 @@ def report(transcript_path: str) -> int:
 
 def render(payload: dict) -> str:
     """Build the badge for a payload. Entry point for the chain wrapper."""
-    global G
+    global G, L
     G = glyphs()
+    L = LABELS[language()]
     return build(payload)
 
 
 def main() -> int:
-    global G
+    global G, L
     # Windows consoles hand us cp1252, which cannot encode the separators or the
     # arrows. Ask for UTF-8 first; if that is refused, fall back to ASCII twins.
     # An unencodable character raises on the way out, and a non-zero exit hides
@@ -602,6 +621,7 @@ def main() -> int:
     except (AttributeError, OSError, ValueError):
         pass
     G = glyphs()
+    L = LABELS[language()]
 
     if "--report" in sys.argv:
         index = sys.argv.index("--report")
