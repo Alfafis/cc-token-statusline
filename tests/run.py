@@ -56,6 +56,20 @@ def skip(name: str, why: str) -> None:
     print(f"  skip {name} ({why})")
 
 
+def wired_parts(command: str) -> tuple[str, str]:
+    """Interpreter and script out of a wired statusLine command.
+
+    Three forms are written, depending on the shell that will run it: quoted,
+    bare when no path needs quoting, and prefixed with PowerShell's call operator.
+    """
+    rest = command[1:].lstrip() if command.startswith("&") else command
+    if rest.startswith('"'):
+        parts = rest.split('" "')
+        return parts[0].lstrip('"'), parts[-1].rstrip('"')
+    interpreter, _, script = rest.partition(" ")
+    return interpreter, script
+
+
 def check(name: str, expected, actual) -> None:
     ok(name) if expected == actual else no(name, expected, actual)
 
@@ -389,11 +403,15 @@ def suite(work: str) -> int:
     # PowerShell's call operator when it does and Git Bash is absent. Both forms
     # still have to be read back, or the missing-interpreter warning goes silent
     # exactly where it was needed.
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import setup_check
+
     for form in (f'{gone} ~/.claude/hooks/tokens_statusline.py',
-                 f'& "{gone}" "~/.claude/hooks/tokens_statusline.py"'):
-        with open(settings, "w", encoding="utf-8") as handle:
-            json.dump({"statusLine": {"command": form}}, handle)
-        contains("reads the interpreter out of every wiring form", "no longer exists", run_hook())
+                 f'& "{gone}" "~/.claude/hooks/tokens_statusline.py"',
+                 f'"{gone}" "~/.claude/hooks/tokens_statusline.py"'):
+        wiring = json.dumps({"statusLine": {"command": form}})
+        check("reads the interpreter out of every wiring form", gone,
+              setup_check.wired_interpreter(wiring))
 
     # Wired through bash on a machine without bash: that command fails on every
     # render, and a failing statusLine hides the whole bar.
@@ -436,7 +454,7 @@ def suite(work: str) -> int:
     check("installs the badge", True, os.path.isfile(os.path.join(inst_dir, "hooks", "tokens_statusline.py")))
     # The path is deliberately not sys.executable: a launcher on PATH outlives the
     # patch-versioned real binary that Homebrew and pyenv hand out.
-    interpreter = command.split('" "')[0].lstrip('"')
+    interpreter = wired_parts(command)[0]
     check("wires an absolute interpreter", True, os.path.isabs(interpreter))
     check("wires an interpreter that exists", True, os.path.isfile(interpreter))
     probe = subprocess.run([interpreter, "-c", "print(1)"], capture_output=True, text=True)
