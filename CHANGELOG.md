@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: the quota countdown could belong to a window you were not reading.**
+  Only one reset was shown, for whichever window was further along. With the 5h
+  window at 40% and the 7d at 92% the badge printed a countdown measured in days
+  and nothing said which clock it came from — it read as the 5h. Each window now
+  carries its own countdown.
+- **The 5h countdown is always on.** It was gated at 70% along with everything
+  else, so the window that stops the session in progress stayed silent until the
+  quota was nearly gone. The 7d one keeps the gate: a reset days out is not worth
+  the columns until that window is the real ceiling.
+- **New: `--report` ends with both quota windows and the time left on each.**
+  `rate_limits` only ever arrives on the status line's stdin, so the badge now
+  records what it last saw in `~/.claude/statusline-cache/quota.json` and the
+  report reads it from there — recording it even when `CC_TOKENS_SEGMENTS` leaves
+  the quota off the bar. Percentages are a snapshot and the report dates them
+  when they have aged; the countdowns are recomputed from the absolute
+  `resets_at` and are always current.
+
 ## 0.4.2
 
 Two ways a status line could be lost on Windows, and one way the badge could

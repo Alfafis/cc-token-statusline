@@ -82,11 +82,12 @@ def lacks(name: str, needle: str, haystack: str) -> None:
     no(name, f"must not contain {needle!r}", haystack) if needle in haystack else ok(name)
 
 
-def payload(transcript, used=93000, pct=9.3, pct5=34.0, pct7=12.0, session="test"):
-    reset = (
-        datetime.datetime.now(datetime.timezone.utc)
-        + datetime.timedelta(hours=2, minutes=12)
-    ).isoformat().replace("+00:00", "Z")
+def payload(transcript, used=93000, pct=9.3, pct5=34.0, pct7=12.0, session="test",
+            reset5_hours=2.2, reset7_hours=2.2):
+    def stamp(hours):
+        moment = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=hours)
+        return moment.isoformat().replace("+00:00", "Z")
+
     out = {
         "session_id": session,
         "transcript_path": transcript,
@@ -104,8 +105,8 @@ def payload(transcript, used=93000, pct=9.3, pct5=34.0, pct7=12.0, session="test
     }
     if pct5 >= 0:
         out["rate_limits"] = {
-            "five_hour": {"used_percentage": pct5, "resets_at": reset},
-            "seven_day": {"used_percentage": pct7, "resets_at": reset},
+            "five_hour": {"used_percentage": pct5, "resets_at": stamp(reset5_hours)},
+            "seven_day": {"used_percentage": pct7, "resets_at": stamp(reset7_hours)},
         }
     return json.dumps(out)
 
@@ -228,17 +229,19 @@ def suite(work: str) -> int:
     out = badge(payload(FIXTURE, session="r1"))
     contains("wrapped in one bracket", "[ctx 93k/1M 9% \u00b7", out)
     contains("ends with bracket", "api 1m12s]", out)
-    contains("quota shows both windows", "quota 5h 34% \u2502 7d 12%", out)
-    lacks("no reset while quota is low", "~", out)
+    # One minute short of the payload's 2.2h on purpose: the countdown truncates
+    # the partial minute rather than round a reset further out than it is.
+    contains("quota shows both windows", "quota 5h 34% ~2h11m \u2502 7d 12%", out)
+    check("only the 5h window counts down while 7d is low", 1, out.count("~"))
     lacks("cost is off by default", "1.23", out)
 
     out = badge(payload(FIXTURE, session="r1b"), CC_TOKENS_SEGMENTS="ctx,cost")
     contains("cost still available on request", "$1.23", out)
 
-    out = badge(payload(FIXTURE, used=780000, pct=78, pct5=41, pct7=82, session="r2"))
-    contains("both windows kept when one is tight", "quota 5h 41% \u2502 7d 82%", out)
-    contains("one reset, for the tight window", "~2h1", out)
-    check("only one reset shown", 1, out.count("~"))
+    out = badge(payload(FIXTURE, used=780000, pct=78, pct5=41, pct7=82, session="r2",
+                        reset7_hours=76))
+    contains("each window carries its own reset", "quota 5h 41% ~2h11m \u2502 7d 82% ~3d03h", out)
+    check("both windows count down once 7d is tight", 2, out.count("~"))
 
     out = badge(payload(FIXTURE, pct5=-1, pct7=-1, session="r3"))
     lacks("quota absent without rate_limits", "quota", out)
@@ -276,6 +279,67 @@ def suite(work: str) -> int:
         check("a wide terminal keeps more of the badge", True, len(wide) > len(narrow))
         check("a narrow terminal is still respected", True, len(narrow) <= 46)
         contains("width comes from the environment, not the pipe", "api ", wide)
+
+    print("quota")
+
+    # A reset already in the past is worse than none: it reads as time left.
+    out = badge(payload(FIXTURE, session="q_past", reset5_hours=-1))
+    contains("expired window still shows its percentage", "quota 5h 34%", out)
+    lacks("an expired reset is dropped, not shown negative", "~", out)
+
+    stripped = json.loads(payload(FIXTURE, session="q_noreset"))
+    del stripped["rate_limits"]["five_hour"]["resets_at"]
+    out = badge(json.dumps(stripped))
+    contains("quota survives a window with no resets_at", "quota 5h 34%", out)
+    lacks("nothing counts down without a timestamp", "~", out)
+
+    out = badge(payload(FIXTURE, session="q_min", reset5_hours=0.5))
+    contains("under an hour drops to minutes", "5h 34% ~29m", out)
+
+    # A percentage no other case uses, so this proves the last render wrote the
+    # file rather than an earlier one having left the same numbers behind.
+    badge(payload(FIXTURE, pct5=57.0, session="q_cache"))
+    quota_file = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "statusline-cache", "quota.json")
+    with open(quota_file, encoding="utf-8") as handle:
+        cached = json.load(handle)
+    check("badge records the quota for the report", 57.0,
+          cached["rate_limits"]["five_hour"]["used_percentage"])
+
+    # Off the segment list the quota is not drawn, but the report still needs it.
+    badge(payload(FIXTURE, pct5=61.0, session="q_hidden"), CC_TOKENS_SEGMENTS="ctx")
+    with open(quota_file, encoding="utf-8") as handle:
+        cached = json.load(handle)
+    check("quota is recorded even when the segment is off", 61.0,
+          cached["rate_limits"]["five_hour"]["used_percentage"])
+
+    # The report is a CLI run: Claude Code hands it no payload, so the quota can
+    # only come from what the badge wrote.
+    def run_report(config_dir):
+        return subprocess.run(
+            [sys.executable, SCRIPT, "--report", FIXTURE],
+            capture_output=True, text=True, encoding="utf-8",
+            env=dict(os.environ, CLAUDE_CONFIG_DIR=config_dir, NO_COLOR="1"),
+        ).stdout
+
+    out = run_report(os.environ["CLAUDE_CONFIG_DIR"])
+    contains("report carries the 5h window", "quota 5h used", out)
+    contains("report counts down to the 5h reset", "quota 5h resets in", out)
+    lacks("no age note while the reading is fresh", "percentages were read", out)
+
+    # Only the percentages go stale - `resets_at` is absolute, so the countdown
+    # stays right however long ago the badge last ran.
+    cached["seen_at"] = cached["seen_at"] - 7200
+    with open(quota_file, "w", encoding="utf-8") as handle:
+        json.dump(cached, handle)
+    out = run_report(os.environ["CLAUDE_CONFIG_DIR"])
+    contains("report dates percentages once they age", "were read 2h00m ago", out)
+    contains("report still counts down from the stale file", "quota 5h resets in", out)
+
+    empty = os.path.join(work, "no-quota")
+    os.makedirs(empty, exist_ok=True)
+    out = run_report(empty)
+    contains("report says so when no quota was ever seen", "no quota recorded yet", out)
+    contains("report still prints the token breakdown", "cache hit rate", out)
 
     print("language")
 
@@ -318,7 +382,7 @@ def suite(work: str) -> int:
     contains("legacy console encoding still renders", "ctx 93k/1M 9%", proc.stdout)
 
     out = badge(payload(FIXTURE, session="ascii"), CC_TOKENS_ASCII="1")
-    contains("ascii mode uses a plain bar", "quota 5h 34% | 7d 12%", out)
+    contains("ascii mode uses a plain bar", "quota 5h 34% ~2h11m | 7d 12%", out)
     contains("ascii mode uses caret and vee", "spent ^", out)
     for glyph in ("·", "│", "↑", "↓"):
         lacks(f"ascii mode drops {glyph!r}", glyph, out)

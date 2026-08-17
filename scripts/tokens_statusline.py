@@ -43,6 +43,17 @@ MAX_SEEN_IDS = 50_000
 # One cache file is written per session; without this the directory only grows.
 CACHE_TTL_DAYS = 30
 
+# The quota belongs to the account, not to a session, so one file holds it and
+# every session overwrites it. `--report` runs from a terminal, where Claude Code
+# hands it no payload at all - this file is the only place those numbers exist
+# outside the status line. Named apart from `tokens-*.json` so `prune_cache`
+# leaves it alone: it is not per-session and never goes stale enough to drop.
+QUOTA_CACHE_NAME = "quota.json"
+
+# The badge renders on every keystroke and the windows move in minutes; without
+# this the file would be rewritten hundreds of times to record the same numbers.
+QUOTA_CACHE_MIN_INTERVAL = 60.0
+
 # `cost` is implemented but off by default: on subscription plans it reports 0,
 # and the columns it costs buy both quota windows instead - the quota is what
 # actually limits the day. Add it back through CC_TOKENS_SEGMENTS.
@@ -157,6 +168,26 @@ def fmt_duration(ms: float) -> str:
     return f"{hours}h{minutes:02d}m"
 
 
+def fmt_reset(seconds: float) -> str:
+    """Countdown to a quota window reset.
+
+    Separate from `fmt_duration` on purpose: the 7d window runs to days, and API
+    timing never does. Widening one contract to serve the other would change
+    every `api` reading in the badge to buy nothing here.
+    """
+    total = int(seconds)
+    if total < 60:
+        return f"{max(total, 0)}s"
+    minutes = total // 60
+    if minutes < 60:
+        return f"{minutes}m"
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours}h{minutes:02d}m"
+    days, hours = divmod(hours, 24)
+    return f"{days}d{hours:02d}h"
+
+
 def pct_color(pct: float) -> str:
     if pct >= 85:
         return C_RED
@@ -188,6 +219,23 @@ def empty_totals() -> dict:
 def cache_path(session_id: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", session_id or "unknown")[:120]
     return os.path.join(config_dir(), "statusline-cache", f"tokens-{safe}.json")
+
+
+def quota_cache_path() -> str:
+    return os.path.join(config_dir(), "statusline-cache", QUOTA_CACHE_NAME)
+
+
+def save_quota(limits: dict) -> None:
+    """Keep the last `rate_limits` seen, so the CLI report can read them."""
+    path = quota_cache_path()
+    cached = load_cache(path)
+    try:
+        age = time.time() - float(cached.get("seen_at") or 0)
+    except (TypeError, ValueError):
+        age = QUOTA_CACHE_MIN_INTERVAL
+    if age < QUOTA_CACHE_MIN_INTERVAL and cached.get("rate_limits") == limits:
+        return
+    save_cache(path, {"rate_limits": limits, "seen_at": time.time()})
 
 
 def load_cache(path: str) -> dict:
@@ -481,6 +529,19 @@ def parse_reset(value) -> datetime | None:
         return None
 
 
+def window_reset(entry: dict, pct: float, always: bool) -> str:
+    """The countdown that trails one window, empty when it is not worth the width."""
+    if not always and pct < QUOTA_ALERT_PCT:
+        return ""
+    reset = parse_reset(entry.get("resets_at"))
+    if reset is None:
+        return ""
+    remaining = (reset - datetime.now(timezone.utc)).total_seconds()
+    if remaining <= 0:
+        return ""
+    return f" {G['approx']}{fmt_reset(remaining)}"
+
+
 def seg_quota(payload: dict, totals: dict | None) -> str:
     limits = payload.get("rate_limits")
     if not isinstance(limits, dict):
@@ -489,35 +550,29 @@ def seg_quota(payload: dict, totals: dict | None) -> str:
     # Both windows are shown, each colored on its own: they expire on different
     # clocks, so the one with room to spare still tells you which limit is the
     # real ceiling today.
-    windows = []
-    for key, label in (("five_hour", "5h"), ("seven_day", "7d")):
+    #
+    # Each countdown sits against its own window because a single trailing one
+    # read as the 5h no matter which window it came from - with 5h at 40% and 7d
+    # at 92% the badge showed days and looked like hours. The 5h countdown is
+    # always on: it is the window that stops the session in progress. The 7d one
+    # waits for QUOTA_ALERT_PCT, since a reset days out costs columns to say
+    # nothing actionable until it becomes the real ceiling.
+    parts = []
+    for key, label, always in (("five_hour", "5h", True), ("seven_day", "7d", False)):
         entry = limits.get(key)
         if not isinstance(entry, dict):
             continue
         pct = entry.get("used_percentage")
         if pct is None:
             continue
-        windows.append((float(pct), label, entry.get("resets_at")))
-    if not windows:
+        pct = float(pct)
+        body = f"{label} {pct:.0f}%" + window_reset(entry, pct, always)
+        parts.append(paint(body, pct_color(pct)))
+    if not parts:
         return ""
 
     glue = f" {paint(G['quota_sep'], C_DIM)} "
-    body = paint(L["quota"], C_GRAY) + " " + glue.join(
-        paint(f"{label} {pct:.0f}%", pct_color(pct)) for pct, label, _ in windows
-    )
-
-    # One reset time at most, for whichever window is actually tight.
-    worst_pct, _, resets_at = max(windows, key=lambda window: window[0])
-    if worst_pct >= QUOTA_ALERT_PCT:
-        reset = parse_reset(resets_at)
-        if reset is not None:
-            remaining = (reset - datetime.now(timezone.utc)).total_seconds()
-            if remaining > 0:
-                body += paint(
-                    f" {G['approx']}{fmt_duration(remaining * 1000)}",
-                    pct_color(worst_pct),
-                )
-    return body
+    return paint(L["quota"], C_GRAY) + " " + glue.join(parts)
 
 
 RENDERERS = {
@@ -598,6 +653,16 @@ def build(payload: dict) -> str:
     transcript = payload.get("transcript_path")
     session_id = payload.get("session_id") or payload.get("sessionId") or ""
 
+    # Recorded whatever the segment list says: the report needs the quota even
+    # when the badge was asked not to draw it. Guarded because a cache write is
+    # not worth losing the badge over.
+    limits = payload.get("rate_limits")
+    if isinstance(limits, dict):
+        try:
+            save_quota(limits)
+        except Exception:
+            pass
+
     wanted = selected_segments()
     needs_transcript = any(name in ("tok", "cache", "sub") for name in wanted)
     totals = None
@@ -623,6 +688,57 @@ def build(payload: dict) -> str:
             order.remove(candidate)
 
     return join([rendered[name] for name in order])
+
+
+def quota_rows() -> tuple[list, str]:
+    """Quota lines for the report, read from the cache the badge keeps.
+
+    Claude Code passes `rate_limits` on the status line's stdin and nowhere else,
+    so a report started from a terminal has no live copy to read.
+
+    The percentages are a snapshot and do age, but `resets_at` is an absolute
+    instant - the countdown is recomputed here and is always current. The age of
+    the snapshot is printed next to it so a stale percentage cannot be read as a
+    live one.
+    """
+    cached = load_cache(quota_cache_path())
+    limits = cached.get("rate_limits")
+    if not isinstance(limits, dict):
+        return [], "NOTE: no quota recorded yet - it is captured when the badge renders."
+
+    rows = []
+    for key, label in (("five_hour", "5h"), ("seven_day", "7d")):
+        entry = limits.get(key)
+        if not isinstance(entry, dict):
+            continue
+        pct = entry.get("used_percentage")
+        if pct is None:
+            continue
+        try:
+            rows.append((f"quota {label} used", f"{float(pct):.1f}%"))
+        except (TypeError, ValueError):
+            continue
+        reset = parse_reset(entry.get("resets_at"))
+        if reset is None:
+            continue
+        remaining = (reset - datetime.now(timezone.utc)).total_seconds()
+        rows.append((
+            f"quota {label} resets in",
+            fmt_reset(remaining) if remaining > 0 else "now",
+        ))
+    if not rows:
+        return [], ""
+
+    try:
+        age = time.time() - float(cached.get("seen_at") or 0)
+    except (TypeError, ValueError):
+        age = 0.0
+    # Same threshold the writer uses, and for the same reason: below it the file
+    # is not rewritten, so a smaller age is noise rather than information.
+    note = ""
+    if age >= QUOTA_CACHE_MIN_INTERVAL:
+        note = f"NOTE: quota percentages were read {fmt_reset(age)} ago; the countdowns are live."
+    return rows, note
 
 
 def report(transcript_path: str) -> int:
@@ -654,8 +770,13 @@ def report(transcript_path: str) -> int:
         ("subagent input", sub_in),
         ("subagent output", totals["sub_output"]),
     ]
+    quota, quota_note = quota_rows()
+    rows.extend(quota)
+
     if totals.get("partial"):
         print("NOTE: transcript too large for a full read - tail only, totals are a floor.")
+    if quota_note:
+        print(quota_note)
     for label, value in rows:
         value = f"{value:,}" if isinstance(value, int) else value
         print(f"{label:<22} {value:>14}")
