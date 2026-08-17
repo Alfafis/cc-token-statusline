@@ -25,6 +25,7 @@ import datetime
 import functools
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -40,6 +41,10 @@ CHAIN = "statusline_chain.py"
 CHAIN_CONFIG = "cc-token-statusline-chain.json"
 LEGACY_BADGE = "tokens-statusline.sh"
 BADGE_NAMES = (BADGE, CHAIN, LEGACY_BADGE)
+COMMAND_TOKEN = re.compile(r'"([^"]*)"|(\S+)')
+# A status line command points at scripts, and a script that needs more than this
+# to mention a name it runs is not one this heuristic should be guessing about.
+MAX_SCRIPT_BYTES = 256 * 1024
 
 
 def config_dir() -> str:
@@ -138,6 +143,45 @@ def describe(command) -> str:
     return command if isinstance(command, str) else json.dumps(command)
 
 
+def referenced_files(command: str) -> list[str]:
+    """Existing files a status line command names, quoted or bare."""
+    paths = []
+    for quoted, bare in COMMAND_TOKEN.findall(command):
+        token = (quoted or bare).strip("'")
+        if not token or token.startswith("-"):
+            continue
+        path = os.path.expanduser(token)
+        if os.path.isfile(path):
+            paths.append(path)
+    return paths
+
+
+def runs_our_badge(command: str) -> bool:
+    """True when a command that is not ours by name still ends up running it.
+
+    A hand-rolled combiner that calls several badge scripts in a row looks like
+    any other third-party status line from settings.json: the command names the
+    combiner, not this badge. Wrapping it would print the badge twice — once from
+    inside the combiner, once from the wrapper — so what a command *runs* has to
+    be read, not just what it is called.
+    """
+    for path in referenced_files(command):
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                text = handle.read(MAX_SCRIPT_BYTES)
+        except OSError:
+            continue
+        if any(name in text for name in BADGE_NAMES):
+            return True
+    return False
+
+
+def copy_badge(hooks: str) -> None:
+    os.makedirs(hooks, exist_ok=True)
+    shutil.copyfile(os.path.join(ROOT, "scripts", BADGE), os.path.join(hooks, BADGE))
+    print(f"installed: {os.path.join(hooks, BADGE)}")
+
+
 def chained_previous(hooks: str) -> str:
     """The third-party command the installed wrapper runs before the badge."""
     try:
@@ -166,6 +210,20 @@ def install(cfg: str, replace: bool, dry_run: bool) -> int:
     # Someone else's status line is wrapped, not overwritten: Claude Code allows
     # exactly one command, and refusing to install was the old behavior that made
     # this plugin unusable next to ccusage, powerline and hand-rolled scripts.
+    # A combiner someone wrote by hand already runs the badge; wrapping it would
+    # print the badge twice. Nothing to rewire then - only the copy is refreshed,
+    # which is what re-running the installer is for.
+    if not already_ours and not replace and runs_our_badge(str(existing_command)):
+        if dry_run:
+            print(f"would copy   {os.path.join(ROOT, 'scripts', BADGE)}")
+            print(f"          -> {os.path.join(hooks, BADGE)}")
+            print(f"would keep   {describe(existing_command)}, which already runs the badge")
+            return 0
+        copy_badge(hooks)
+        print(f"statusLine already reaches the badge through {describe(existing_command)}, "
+              "left as it is")
+        return 0
+
     fresh_chain = bool(existing_command) and not already_ours
     chaining = (fresh_chain or already_chained) and not replace
 
@@ -184,9 +242,7 @@ def install(cfg: str, replace: bool, dry_run: bool) -> int:
             print(f"would set    statusLine = {badge_command(cfg)}")
         return 0
 
-    os.makedirs(hooks, exist_ok=True)
-    shutil.copyfile(os.path.join(ROOT, "scripts", BADGE), os.path.join(hooks, BADGE))
-    print(f"installed: {os.path.join(hooks, BADGE)}")
+    copy_badge(hooks)
 
     if chaining:
         shutil.copyfile(os.path.join(ROOT, "scripts", CHAIN), os.path.join(hooks, CHAIN))

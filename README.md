@@ -96,6 +96,11 @@ macOS and Linux, Git Bash on Windows when Git Bash is installed, PowerShell on
 Windows when it is not. `CC_TOKENS_CHAIN_SHELL` overrides the choice with
 `bash`, `powershell` or `cmd`.
 
+An existing command that already runs this badge — a combiner script calling
+several badges in a row, say — is left exactly as it is: wrapping it would print
+the badge twice. The installer reads what a command runs, not just what it is
+named, so it only refreshes the copy in that case.
+
 | Flag | Effect |
 | --- | --- |
 | `--replace` | discard the existing statusLine instead of wrapping it |
