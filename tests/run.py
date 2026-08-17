@@ -516,6 +516,51 @@ def suite(work: str) -> int:
     check("chain survives a broken wrapped command", 0, code)
     contains("badge still renders when the wrapped command fails", "ctx 93k/1M 9%", out)
 
+    # The wrapped command was written for the shell Claude Code runs status lines
+    # in: Git Bash on Windows when it is installed, PowerShell when it is not, a
+    # POSIX shell everywhere else. Handing it to cmd.exe - what shell=True gives
+    # on Windows - loses `~`, `$(...)` and `2>/dev/null` silently, and the
+    # third-party badge this wrapper exists to preserve vanishes from the bar.
+    def wrap(command):
+        path = os.path.join(other, "hooks", "cc-token-statusline-chain.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"previous": command}, handle)
+
+    wrap("printf 'PREVIOUS_SH'")
+    out, code = run_chain(other, CC_TOKENS_CHAIN_SHELL="bash")
+    check("chain through bash exits 0", 0, code)
+    contains("chain runs the wrapped command in a POSIX shell", "PREVIOUS_SH", out)
+
+    if os.name == "nt":
+        wrap("echo $(printf 'PREVIOUS_AUTO')")
+        out, code = run_chain(other)
+        contains("windows autodetects a POSIX shell, not cmd.exe", "PREVIOUS_AUTO", out)
+
+    if not (shutil.which("powershell") or shutil.which("pwsh")):
+        skip("chain through powershell", "no powershell on this platform")
+    else:
+        wrap("Write-Output 'PREVIOUS_PS'")
+        out, code = run_chain(other, CC_TOKENS_CHAIN_SHELL="powershell")
+        check("chain through powershell exits 0", 0, code)
+        contains("chain runs the wrapped command in PowerShell", "PREVIOUS_PS", out)
+        contains("badge still follows it there", "ctx 93k/1M 9%", out)
+
+        # Claude Code routes through PowerShell on a Windows box without Git Bash,
+        # so the command written into settings.json has to survive that parser too
+        # - PowerShell reads a line starting with a quote as a string expression,
+        # not as a program to run.
+        shell = shutil.which("powershell") or shutil.which("pwsh")
+        through_ps = subprocess.run(
+            [shell, "-NoProfile", "-Command", spaced_command],
+            input=payload(FIXTURE, session="ps"),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            env=shell_env,
+        )
+        check("the wired command runs under PowerShell", 0, through_ps.returncode)
+        contains("and prints the badge from there", "ctx 93k/1M 9%", through_ps.stdout)
+
+    wrap("echo PREVIOUS")
+
     # The wrapped status line's own glyphs reach stdout untouched. On a console
     # that refuses UTF-8 they must degrade, not raise: a non-zero exit here would
     # hide every status line, not just the foreign one.

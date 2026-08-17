@@ -91,6 +91,11 @@ The wrapped command gets a 2 second timeout (`CC_TOKENS_CHAIN_TIMEOUT`) and its
 failures are swallowed, so a slow or broken third-party status line cannot take
 the badge — or the whole status bar — down with it.
 
+It also runs in the same shell Claude Code would have used: a POSIX shell on
+macOS and Linux, Git Bash on Windows when Git Bash is installed, PowerShell on
+Windows when it is not. `CC_TOKENS_CHAIN_SHELL` overrides the choice with
+`bash`, `powershell` or `cmd`.
+
 | Flag | Effect |
 | --- | --- |
 | `--replace` | discard the existing statusLine instead of wrapping it |
@@ -111,6 +116,7 @@ All via environment variables (settable in the `env` block of `settings.json`):
 | `CC_TOKENS_ASCII` | unset | `1` forces ASCII glyphs (`|`, `^`, `v`) instead of `│ ↑ ↓` |
 | `CC_TOKENS_PYTHON` | autodetected | explicit python path, honored only by the legacy bash entry point |
 | `CC_TOKENS_CHAIN_TIMEOUT` | `2` | seconds allowed to a wrapped status line command |
+| `CC_TOKENS_CHAIN_SHELL` | autodetected | shell used for a wrapped command: `bash`, `powershell` or `cmd` |
 | `CC_TOKENS_DEBUG` | unset | raise errors instead of printing nothing |
 
 When the badge does not fit, segments are dropped in this order:
