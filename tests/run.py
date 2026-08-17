@@ -56,6 +56,20 @@ def skip(name: str, why: str) -> None:
     print(f"  skip {name} ({why})")
 
 
+def wired_parts(command: str) -> tuple[str, str]:
+    """Interpreter and script out of a wired statusLine command.
+
+    Three forms are written, depending on the shell that will run it: quoted,
+    bare when no path needs quoting, and prefixed with PowerShell's call operator.
+    """
+    rest = command[1:].lstrip() if command.startswith("&") else command
+    if rest.startswith('"'):
+        parts = rest.split('" "')
+        return parts[0].lstrip('"'), parts[-1].rstrip('"')
+    interpreter, _, script = rest.partition(" ")
+    return interpreter, script
+
+
 def check(name: str, expected, actual) -> None:
     ok(name) if expected == actual else no(name, expected, actual)
 
@@ -385,6 +399,20 @@ def suite(work: str) -> int:
         json.dump({"statusLine": {"command": '"python" "~/.claude/hooks/tokens_statusline.py"'}}, handle)
     check("never guesses about a bare interpreter name", "", run_hook())
 
+    # Windows wiring drops the quotes when no path needs them, and prefixes
+    # PowerShell's call operator when it does and Git Bash is absent. Both forms
+    # still have to be read back, or the missing-interpreter warning goes silent
+    # exactly where it was needed.
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import setup_check
+
+    for form in (f'{gone} ~/.claude/hooks/tokens_statusline.py',
+                 f'& "{gone}" "~/.claude/hooks/tokens_statusline.py"',
+                 f'"{gone}" "~/.claude/hooks/tokens_statusline.py"'):
+        wiring = json.dumps({"statusLine": {"command": form}})
+        check("reads the interpreter out of every wiring form", gone,
+              setup_check.wired_interpreter(wiring))
+
     # Wired through bash on a machine without bash: that command fails on every
     # render, and a failing statusLine hides the whole bar.
     with open(settings, "w", encoding="utf-8") as handle:
@@ -426,7 +454,7 @@ def suite(work: str) -> int:
     check("installs the badge", True, os.path.isfile(os.path.join(inst_dir, "hooks", "tokens_statusline.py")))
     # The path is deliberately not sys.executable: a launcher on PATH outlives the
     # patch-versioned real binary that Homebrew and pyenv hand out.
-    interpreter = command.split('" "')[0].lstrip('"')
+    interpreter = wired_parts(command)[0]
     check("wires an absolute interpreter", True, os.path.isabs(interpreter))
     check("wires an interpreter that exists", True, os.path.isfile(interpreter))
     probe = subprocess.run([interpreter, "-c", "print(1)"], capture_output=True, text=True)
@@ -515,6 +543,95 @@ def suite(work: str) -> int:
     out, code = run_chain(other)
     check("chain survives a broken wrapped command", 0, code)
     contains("badge still renders when the wrapped command fails", "ctx 93k/1M 9%", out)
+
+    # The wrapped command was written for the shell Claude Code runs status lines
+    # in: Git Bash on Windows when it is installed, PowerShell when it is not, a
+    # POSIX shell everywhere else. Handing it to cmd.exe - what shell=True gives
+    # on Windows - loses `~`, `$(...)` and `2>/dev/null` silently, and the
+    # third-party badge this wrapper exists to preserve vanishes from the bar.
+    def wrap(command):
+        path = os.path.join(other, "hooks", "cc-token-statusline-chain.json")
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"previous": command}, handle)
+
+    wrap("printf 'PREVIOUS_SH'")
+    out, code = run_chain(other, CC_TOKENS_CHAIN_SHELL="bash")
+    check("chain through bash exits 0", 0, code)
+    contains("chain runs the wrapped command in a POSIX shell", "PREVIOUS_SH", out)
+
+    if os.name == "nt":
+        wrap("echo $(printf 'PREVIOUS_AUTO')")
+        out, code = run_chain(other)
+        contains("windows autodetects a POSIX shell, not cmd.exe", "PREVIOUS_AUTO", out)
+
+    shell = shutil.which("powershell") or shutil.which("pwsh")
+    if not shell:
+        skip("chain through powershell", "no powershell on this platform")
+    else:
+        # PowerShell takes seconds to start, well past the 2 second budget a
+        # wrapped command gets by default.
+        wrap("Write-Output 'PREVIOUS_PS'")
+        out, code = run_chain(other, CC_TOKENS_CHAIN_SHELL="powershell",
+                              CC_TOKENS_CHAIN_TIMEOUT="60")
+        check("chain through powershell exits 0", 0, code)
+        contains("chain runs the wrapped command in PowerShell", "PREVIOUS_PS", out)
+        contains("badge still follows it there", "ctx 93k/1M 9%", out)
+
+    # Claude Code routes through PowerShell on a Windows box with no Git Bash, so
+    # the command written into settings.json has to survive that parser too:
+    # PowerShell reads a line starting with a quote as a string expression, not as
+    # a program to run, and a statusLine that cannot parse hides the status bar.
+    if os.name != "nt" or not shell:
+        skip("the wired command runs under PowerShell", "PowerShell only renders it on Windows")
+    else:
+        # The runner has Git Bash, so the installer wrote the quoted form for the
+        # config dir with a space in it. The form that reaches a machine without
+        # Git Bash is that same command behind the call operator - and the bare
+        # form, which is what a path with no space gets on either shell.
+        ps_forms = [("with the call operator", "& " + spaced_command, shell_env)]
+        if not command.startswith(('"', "&")):
+            ps_forms.append(("unquoted", command, dict(
+                os.environ, CLAUDE_CONFIG_DIR=inst_dir, NO_COLOR="1", CC_TOKENS_WIDTH="400")))
+        for label, ps_command, env in ps_forms:
+            through_ps = subprocess.run(
+                [shell, "-NoProfile", "-Command", ps_command],
+                input=payload(FIXTURE, session="ps"),
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env=env,
+            )
+            check(f"the wired command runs under PowerShell {label}", 0, through_ps.returncode)
+            contains(f"and prints the badge from there {label}", "ctx 93k/1M 9%", through_ps.stdout)
+
+    # The form of the wired command follows the shell that will run it. Both
+    # branches are exercised everywhere, because a Windows-only test proves
+    # nothing until someone runs the Windows job.
+    forms = (
+        ("C:/py/python.exe", True, "C:/py/python.exe C:/cfg/hooks/badge.py"),
+        ("C:/py/python.exe", False, "C:/py/python.exe C:/cfg/hooks/badge.py"),
+        ("C:/Program Files/py/python.exe", True,
+         '"C:/Program Files/py/python.exe" "C:/cfg/hooks/badge.py"'),
+        ("C:/Program Files/py/python.exe", False,
+         '& "C:/Program Files/py/python.exe" "C:/cfg/hooks/badge.py"'),
+    )
+    for python, has_bash, expected in forms:
+        bash = "C:/Git/bin/bash.exe" if has_bash else ""
+        probe = (
+            "import os, sys;"
+            "sys.path.insert(0, %r);" % os.path.join(ROOT, "scripts")
+            + "import install;"
+            "os.name = 'nt';"
+            "install.git_bash = lambda: %r;" % bash
+            + "install.interpreter = lambda: %r;" % python
+            + "print(install.command_for('C:/cfg', 'badge.py'))"
+        )
+        proc = subprocess.run([sys.executable, "-c", probe], capture_output=True,
+                              text=True, encoding="utf-8")
+        label = "with" if has_bash else "without"
+        quoted = "a quoted path" if " " in python else "a bare path"
+        check(f"windows command form: {quoted}, {label} Git Bash",
+              expected, proc.stdout.strip())
+
+    wrap("echo PREVIOUS")
 
     # The wrapped status line's own glyphs reach stdout untouched. On a console
     # that refuses UTF-8 they must degrade, not raise: a non-zero exit here would

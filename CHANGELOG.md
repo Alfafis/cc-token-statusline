@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: a wrapped status line ran in the wrong shell on Windows.** Claude Code
+  runs status line commands through Git Bash when it is installed and PowerShell
+  when it is not, so the command recorded from `settings.json` is written for one
+  of those. The wrapper ran it through `cmd.exe`, which expands neither `~` nor
+  `$(...)` and does not know `2>/dev/null` — the third-party badge failed without
+  a message and simply disappeared from the bar, which is the outcome wrapping
+  exists to prevent. The shell is now chosen the way Claude Code chooses it, and
+  `CC_TOKENS_CHAIN_SHELL` overrides it.
+- **Fixed: the wired command could not be parsed by PowerShell.** It was written
+  as `"python" "badge.py"`, which bash runs and PowerShell reads as a string
+  expression before erroring on the rest — so on a Windows box without Git Bash,
+  where Claude Code falls back to PowerShell, the badge hid the entire status bar
+  instead of drawing it. The command is now written unquoted when no path needs
+  quoting (valid in both shells) and with PowerShell's call operator when one
+  does and Git Bash is absent. The SessionStart hook flags the wiring when
+  installing or removing Git later flips the shell under it.
+
 ## 0.4.1
 
 A pass over every OS-specific assumption left in the runtime and the installer.

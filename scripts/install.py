@@ -29,7 +29,12 @@ import shutil
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+
+from statusline_chain import git_bash  # noqa: E402  (needs HERE on the path first)
+
 BADGE = "tokens_statusline.py"
 CHAIN = "statusline_chain.py"
 CHAIN_CONFIG = "cc-token-statusline-chain.json"
@@ -98,9 +103,27 @@ def interpreter() -> str:
 
 
 def command_for(cfg: str, script_name: str) -> str:
+    """The command to write into settings.json, in a form its shell can run.
+
+    Claude Code hands this string to a shell: a POSIX one on macOS and Linux, Git
+    Bash on Windows when Git Bash is installed, PowerShell on Windows when it is
+    not. Bash and PowerShell disagree about a line that starts with a quote —
+    bash runs it, PowerShell parses it as a string expression and errors out, and
+    a statusLine command that errors hides the whole status bar. Unquoted tokens
+    are a program to run in both, so quotes are only spent when a path needs them.
+    """
     script = os.path.join(cfg, "hooks", script_name).replace("\\", "/")
     python = interpreter().replace("\\", "/")
-    return f'"{python}" "{script}"'
+    if os.name != "nt":
+        return f'"{python}" "{script}"'
+    if " " not in python and " " not in script:
+        return f"{python} {script}"
+    if git_bash():
+        return f'"{python}" "{script}"'
+    # PowerShell's call operator, which is what makes a quoted path executable
+    # there. Meaningless to bash, but bash is not what will run this machine's
+    # status line: Claude Code only falls back to PowerShell when there is none.
+    return f'& "{python}" "{script}"'
 
 
 def badge_command(cfg: str) -> str:
