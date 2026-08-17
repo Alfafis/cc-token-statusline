@@ -36,7 +36,7 @@
   <table>
     <tr><th>Segment</th><th>Reads</th><th>Why it earns the space</th></tr>
     <tr><td><code>ctx</code></td><td>Context window used against the model's limit</td><td>The only value that goes down as well as up. Yellow at 60%, red at 85% — you see the wall before hitting it.</td></tr>
-    <tr><td><code>quota</code></td><td>Both account rate limit windows, 5h and 7d</td><td>Account-wide, not per session. Once either passes 70% the reset time is appended, since that is the only actionable fact left.</td></tr>
+    <tr><td><code>quota</code></td><td>Both account rate limit windows, 5h and 7d</td><td>Account-wide, not per session. Each window carries its own countdown, so a reset is never read against the wrong clock. The 5h one is always shown — it is the window that stops the session you are in; the 7d one appears once it passes 70%.</td></tr>
     <tr><td><code>spent</code></td><td>Cumulative billed input and output for the session</td><td>Consumption since the start, as opposed to the occupancy <code>ctx</code> measures.</td></tr>
     <tr><td><code>cache</code></td><td>Share of billed input served from cache</td><td>Higher is better. A rate falling through a long session means something large and unstable near the top of the prompt is invalidating the cache each round.</td></tr>
     <tr><td><code>sub</code></td><td>Tokens spent by subagents</td><td>Fan-out is one line to trigger and its cost appears nowhere else in the interface.</td></tr>
@@ -52,7 +52,7 @@
   <p class="note">Any error prints nothing and exits 0 — a non-zero exit would hide the entire status bar, so a bug here degrades to an empty badge rather than a broken terminal.</p>
 
   <h2>Full breakdown</h2>
-  <p>The badge is a glance. For the numbers behind it, <code>/token-report</code> prints fresh input, cache writes, cache reads, output, thinking tokens and subagent totals for the session.</p>
+  <p>The badge is a glance. For the numbers behind it, <code>/token-report</code> prints fresh input, cache writes, cache reads, output, thinking tokens and subagent totals for the session, then both quota windows and the time left on each.</p>
 
   <h2>Configuration</h2>
   <p>Everything is an environment variable, settable in the <code>env</code> block of <code>settings.json</code>.</p>

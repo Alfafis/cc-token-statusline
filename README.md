@@ -29,12 +29,16 @@ cannot break an existing config. `limits` is accepted as an alias for `quota`.
 account-wide, shared across every session and machine, and neither resets when
 you start a new session. Each window is colored on its own clock, and they are
 split by `│` rather than the `·` used between segments — same segment, two
-readings. Once either
-crosses 70%, the reset time for the tight one is appended — the only actionable
-fact at that point:
+readings.
+
+Each window carries its own countdown, so a reset can never be read against the
+wrong clock. The 5h one is always shown: it is the window that stops the session
+you are in. The 7d one appears only once that window passes 70%, because a reset
+days away costs columns to say nothing you can act on until it becomes the real
+ceiling.
 
 ```
-[ctx 780k/1M 78% · quota 5h 41% │ 7d 82% ~2h11m · spent ↑2.4M ↓33k · cache 71%]
+[ctx 780k/1M 78% · quota 5h 41% ~2h11m │ 7d 82% ~3d03h · spent ↑2.4M ↓33k]
 ```
 
 The segment disappears entirely when the payload carries no `rate_limits`
@@ -140,6 +144,15 @@ python3 ~/.claude/hooks/tokens_statusline.py --report <transcript.jsonl>
 ```
 
 Also available as the `/token-report` command when installed as a plugin.
+
+The report ends with both quota windows and the time left on each. Claude Code
+sends `rate_limits` on the status line's stdin and nowhere else, so a report run
+from a terminal has no live copy: the badge records what it last saw in
+`~/.claude/statusline-cache/quota.json` and the report reads that. The
+percentages are therefore a snapshot, and the report says how old it is whenever
+it is worth saying. The countdowns are not a snapshot — `resets_at` is an
+absolute instant, recomputed at print time — so they are right however long ago
+the badge last rendered.
 
 ## How it works
 

@@ -28,4 +28,10 @@ Print the detailed token breakdown for the session in progress.
    A hit rate below ~70% in a long session usually means something large and
    unstable is sitting near the top of the prompt.
 
+   The quota rows at the end come from what the badge last saw, not from this
+   run: the percentages carry a NOTE with their age once they have one, while
+   the countdowns are recomputed and always current. If the report says no quota
+   was ever recorded, the badge has not rendered under this config directory —
+   say so rather than guessing a number.
+
 Do not edit any files for this command.
