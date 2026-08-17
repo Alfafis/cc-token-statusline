@@ -28,7 +28,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from statusline_chain import git_bash  # noqa: E402  (needs the script dir on the path)
+from install import referenced_files  # noqa: E402  (needs the script dir on the path)
+from statusline_chain import git_bash  # noqa: E402
 
 BADGE_NAMES = ("tokens-statusline.sh", "tokens_statusline.py", "statusline_chain.py")
 SKIP_MARKER = ".cc-token-statusline-skip"
@@ -52,11 +53,29 @@ def emit(message: str) -> None:
 
 
 def wiring_files(cfg: str) -> list[str]:
-    return [
+    """Files that can prove the badge is wired: settings, and what they run.
+
+    The command in settings.json may be a combiner that runs the badge among
+    other scripts, in which case the badge appears nowhere in settings.json and
+    only reading the referenced script settles it. The installer decides the same
+    question the same way — the two must agree, or one nudges to run the other
+    and the other answers that there is nothing to do.
+    """
+    paths = [
         os.path.join(cfg, "settings.json"),
         os.path.join(cfg, "settings.local.json"),
         os.path.join(cfg, "hooks", "combined-statusline.sh"),
     ]
+    for name in ("settings.json", "settings.local.json"):
+        command = statusline_command(os.path.join(cfg, name))
+        paths.extend(referenced_files(command))
+    return paths
+
+
+def statusline_command(path: str) -> str:
+    command = load_settings(path).get("statusLine")
+    command = command.get("command", "") if isinstance(command, dict) else ""
+    return command if isinstance(command, str) else ""
 
 
 def find_wiring(cfg: str) -> str | None:
@@ -127,10 +146,8 @@ def wrong_shell_form(cfg: str) -> bool:
     if os.name != "nt":
         return False
     for name in ("settings.json", "settings.local.json"):
-        settings = load_settings(os.path.join(cfg, name))
-        command = settings.get("statusLine")
-        command = command.get("command", "") if isinstance(command, dict) else ""
-        if not isinstance(command, str) or not any(n in command for n in BADGE_NAMES):
+        command = statusline_command(os.path.join(cfg, name))
+        if not any(n in command for n in BADGE_NAMES):
             continue
         bash = bool(git_bash())
         if command.startswith("&") and bash:

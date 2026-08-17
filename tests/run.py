@@ -413,6 +413,16 @@ def suite(work: str) -> int:
         check("reads the interpreter out of every wiring form", gone,
               setup_check.wired_interpreter(wiring))
 
+    # A combiner under a name of its own still counts as wired. The hook and the
+    # installer have to answer that the same way: one nudging to run the other,
+    # which then reports there is nothing to do, is a loop with no exit.
+    mine = os.path.join(hook_dir, "hooks", "my-statusline.sh")
+    with open(mine, "w", encoding="utf-8") as handle:
+        handle.write('bash "$HOOKS/tokens-statusline.sh"\n')
+    with open(settings, "w", encoding="utf-8") as handle:
+        json.dump({"statusLine": {"command": f'bash "{mine}"'}}, handle)
+    check("counts a combiner that runs the badge as wired", "", run_hook())
+
     # Wired through bash on a machine without bash: that command fails on every
     # render, and a failing statusLine hides the whole bar.
     with open(settings, "w", encoding="utf-8") as handle:
@@ -687,6 +697,39 @@ def suite(work: str) -> int:
     again = json.load(open(os.path.join(unwrap, "settings.json"), encoding="utf-8"))
     lacks("a later refresh does not resurrect the chain", "statusline_chain.py",
           again["statusLine"]["command"])
+
+    # A combiner written by hand runs several badge scripts in a row, so its
+    # command names the combiner and nothing of ours - but it already prints this
+    # badge. Wrapping it prints the badge twice, which is what matching on the
+    # command's name alone used to do.
+    combined = os.path.join(work, "combinedcfg")
+    combiner = os.path.join(combined, "hooks", "combined-statusline.sh")
+    os.makedirs(os.path.dirname(combiner), exist_ok=True)
+    with open(combiner, "w", encoding="utf-8") as handle:
+        handle.write('for s in caveman-statusline.sh tokens-statusline.sh; do bash "$s"; done\n')
+    combined_command = f'bash "{combiner}"'
+    combined_settings = os.path.join(combined, "settings.json")
+    with open(combined_settings, "w", encoding="utf-8") as handle:
+        json.dump({"statusLine": {"type": "command", "command": combined_command}}, handle)
+
+    env = dict(os.environ, CLAUDE_CONFIG_DIR=combined)
+    out = subprocess.run([sys.executable, installer, "--dry-run"], capture_output=True,
+                         text=True, encoding="utf-8", env=env).stdout
+    contains("dry run says it leaves a combiner alone", "already runs the badge", out)
+    subprocess.run([sys.executable, installer], capture_output=True, env=env)
+    kept = json.load(open(combined_settings, encoding="utf-8"))
+    check("a combiner that already runs the badge is left wired", combined_command,
+          kept["statusLine"]["command"])
+    check("and is not wrapped into printing the badge twice", False,
+          os.path.exists(os.path.join(combined, "hooks", "statusline_chain.py")))
+    check("but the copy it runs is refreshed", True,
+          os.path.isfile(os.path.join(combined, "hooks", "tokens_statusline.py")))
+
+    # --replace stays the way out: it is the one flag that says overwrite.
+    subprocess.run([sys.executable, installer, "--replace"], capture_output=True, env=env)
+    forced = json.load(open(combined_settings, encoding="utf-8"))
+    contains("replace still takes over from a combiner", "tokens_statusline.py",
+             forced["statusLine"]["command"])
 
     print("json manifests")
     for name in (
