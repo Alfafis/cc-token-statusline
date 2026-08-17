@@ -584,14 +584,23 @@ def suite(work: str) -> int:
     if os.name != "nt" or not shell:
         skip("the wired command runs under PowerShell", "PowerShell only renders it on Windows")
     else:
-        through_ps = subprocess.run(
-            [shell, "-NoProfile", "-Command", spaced_command],
-            input=payload(FIXTURE, session="ps"),
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            env=shell_env,
-        )
-        check("the wired command runs under PowerShell", 0, through_ps.returncode)
-        contains("and prints the badge from there", "ctx 93k/1M 9%", through_ps.stdout)
+        # The runner has Git Bash, so the installer wrote the quoted form for the
+        # config dir with a space in it. The form that reaches a machine without
+        # Git Bash is that same command behind the call operator - and the bare
+        # form, which is what a path with no space gets on either shell.
+        ps_forms = [("with the call operator", "& " + spaced_command, shell_env)]
+        if " " not in command:
+            ps_forms.append(("unquoted", command, dict(
+                os.environ, CLAUDE_CONFIG_DIR=inst_dir, NO_COLOR="1", CC_TOKENS_WIDTH="400")))
+        for label, ps_command, env in ps_forms:
+            through_ps = subprocess.run(
+                [shell, "-NoProfile", "-Command", ps_command],
+                input=payload(FIXTURE, session="ps"),
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                env=env,
+            )
+            check(f"the wired command runs under PowerShell {label}", 0, through_ps.returncode)
+            contains(f"and prints the badge from there {label}", "ctx 93k/1M 9%", through_ps.stdout)
 
     # The form of the wired command follows the shell that will run it. Both
     # branches are exercised everywhere, because a Windows-only test proves
