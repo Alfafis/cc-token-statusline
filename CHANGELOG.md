@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.4.2
+
+Two ways a status line could be lost on Windows, and one way the badge could
+print itself twice on any of them.
 
 - **Fixed: the installer wrapped a status line that already ran the badge.** A
   combiner written by hand — one script running several badges in a row — names
@@ -9,7 +12,6 @@
   a command runs before deciding, leaves such a wiring alone and only refreshes
   the copy. The SessionStart hook answers the same question the same way, so it
   no longer nudges toward an installer that would report nothing to do.
-
 - **Fixed: a wrapped status line ran in the wrong shell on Windows.** Claude Code
   runs status line commands through Git Bash when it is installed and PowerShell
   when it is not, so the command recorded from `settings.json` is written for one

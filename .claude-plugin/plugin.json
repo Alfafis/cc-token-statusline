@@ -2,7 +2,7 @@
   "name": "cc-token-statusline",
   "displayName": "Token Status Line",
   "description": "Status line badge with context window usage, 5h/7d account quota, cumulative tokens, cache hit rate, subagent token spend, edited lines and API time.",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "author": {
     "name": "Alfafis",
     "url": "https://github.com/Alfafis"
