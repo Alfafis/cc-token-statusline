@@ -385,6 +385,16 @@ def suite(work: str) -> int:
         json.dump({"statusLine": {"command": '"python" "~/.claude/hooks/tokens_statusline.py"'}}, handle)
     check("never guesses about a bare interpreter name", "", run_hook())
 
+    # Windows wiring drops the quotes when no path needs them, and prefixes
+    # PowerShell's call operator when it does and Git Bash is absent. Both forms
+    # still have to be read back, or the missing-interpreter warning goes silent
+    # exactly where it was needed.
+    for form in (f'{gone} ~/.claude/hooks/tokens_statusline.py',
+                 f'& "{gone}" "~/.claude/hooks/tokens_statusline.py"'):
+        with open(settings, "w", encoding="utf-8") as handle:
+            json.dump({"statusLine": {"command": form}}, handle)
+        contains("reads the interpreter out of every wiring form", "no longer exists", run_hook())
+
     # Wired through bash on a machine without bash: that command fails on every
     # render, and a failing statusLine hides the whole bar.
     with open(settings, "w", encoding="utf-8") as handle:
@@ -536,20 +546,26 @@ def suite(work: str) -> int:
         out, code = run_chain(other)
         contains("windows autodetects a POSIX shell, not cmd.exe", "PREVIOUS_AUTO", out)
 
-    if not (shutil.which("powershell") or shutil.which("pwsh")):
+    shell = shutil.which("powershell") or shutil.which("pwsh")
+    if not shell:
         skip("chain through powershell", "no powershell on this platform")
     else:
+        # PowerShell takes seconds to start, well past the 2 second budget a
+        # wrapped command gets by default.
         wrap("Write-Output 'PREVIOUS_PS'")
-        out, code = run_chain(other, CC_TOKENS_CHAIN_SHELL="powershell")
+        out, code = run_chain(other, CC_TOKENS_CHAIN_SHELL="powershell",
+                              CC_TOKENS_CHAIN_TIMEOUT="60")
         check("chain through powershell exits 0", 0, code)
         contains("chain runs the wrapped command in PowerShell", "PREVIOUS_PS", out)
         contains("badge still follows it there", "ctx 93k/1M 9%", out)
 
-        # Claude Code routes through PowerShell on a Windows box without Git Bash,
-        # so the command written into settings.json has to survive that parser too
-        # - PowerShell reads a line starting with a quote as a string expression,
-        # not as a program to run.
-        shell = shutil.which("powershell") or shutil.which("pwsh")
+    # Claude Code routes through PowerShell on a Windows box with no Git Bash, so
+    # the command written into settings.json has to survive that parser too:
+    # PowerShell reads a line starting with a quote as a string expression, not as
+    # a program to run, and a statusLine that cannot parse hides the status bar.
+    if os.name != "nt" or not shell:
+        skip("the wired command runs under PowerShell", "PowerShell only renders it on Windows")
+    else:
         through_ps = subprocess.run(
             [shell, "-NoProfile", "-Command", spaced_command],
             input=payload(FIXTURE, session="ps"),
@@ -558,6 +574,35 @@ def suite(work: str) -> int:
         )
         check("the wired command runs under PowerShell", 0, through_ps.returncode)
         contains("and prints the badge from there", "ctx 93k/1M 9%", through_ps.stdout)
+
+    # The form of the wired command follows the shell that will run it. Both
+    # branches are exercised everywhere, because a Windows-only test proves
+    # nothing until someone runs the Windows job.
+    forms = (
+        ("C:/py/python.exe", True, "C:/py/python.exe C:/cfg/hooks/badge.py"),
+        ("C:/py/python.exe", False, "C:/py/python.exe C:/cfg/hooks/badge.py"),
+        ("C:/Program Files/py/python.exe", True,
+         '"C:/Program Files/py/python.exe" "C:/cfg/hooks/badge.py"'),
+        ("C:/Program Files/py/python.exe", False,
+         '& "C:/Program Files/py/python.exe" "C:/cfg/hooks/badge.py"'),
+    )
+    for python, has_bash, expected in forms:
+        bash = "C:/Git/bin/bash.exe" if has_bash else ""
+        probe = (
+            "import os, sys;"
+            "sys.path.insert(0, %r);" % os.path.join(ROOT, "scripts")
+            + "import install;"
+            "os.name = 'nt';"
+            "install.git_bash = lambda: %r;" % bash
+            + "install.interpreter = lambda: %r;" % python
+            + "print(install.command_for('C:/cfg', 'badge.py'))"
+        )
+        proc = subprocess.run([sys.executable, "-c", probe], capture_output=True,
+                              text=True, encoding="utf-8")
+        label = "with" if has_bash else "without"
+        quoted = "a quoted path" if " " in python else "a bare path"
+        check(f"windows command form: {quoted}, {label} Git Bash",
+              expected, proc.stdout.strip())
 
     wrap("echo PREVIOUS")
 

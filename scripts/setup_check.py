@@ -26,8 +26,13 @@ import re
 import shutil
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from statusline_chain import git_bash  # noqa: E402  (needs the script dir on the path)
+
 BADGE_NAMES = ("tokens-statusline.sh", "tokens_statusline.py", "statusline_chain.py")
 SKIP_MARKER = ".cc-token-statusline-skip"
+BADGE_PATTERN = "|".join(re.escape(name) for name in BADGE_NAMES)
 
 
 def config_dir() -> str:
@@ -77,23 +82,71 @@ def drifted_copy(installed: str, shipped: str) -> bool:
         return False
 
 
-def missing_interpreter(wiring: str) -> str | None:
-    """The interpreter the wiring names, if it is no longer there to run."""
+def wired_interpreter(wiring: str) -> str | None:
+    """The interpreter named right before the badge script, whatever the form.
+
+    Three forms reach settings.json: quoted (`"python" "badge.py"`), bare when no
+    path needs quoting, and PowerShell's call operator (`& "python" "badge.py"`)
+    on a Windows box with no Git Bash. Only the middle token matters here.
+    """
     # The wiring is JSON on disk, so its quotes arrive escaped.
     text = wiring.replace('\\"', '"').replace("\\\\", "\\")
-    match = re.search(
-        r'"([^"]+)"\s+"[^"]*(?:%s)"' % "|".join(re.escape(name) for name in BADGE_NAMES),
-        text,
-    )
-    if not match:
+    quoted = r'"([^"]+)"[^\S\n]+"[^"]*(?:%s)"' % BADGE_PATTERN
+    bare = r'([^\s"\']+)[^\S\n]+([^\s"\']*(?:%s))' % BADGE_PATTERN
+    for line in text.splitlines():
+        if not any(name in line for name in BADGE_NAMES):
+            continue
+        match = re.search(quoted, line) or re.search(bare, line)
+        if match:
+            return match.group(1)
+    return None
+
+
+def missing_interpreter(wiring: str) -> str | None:
+    """The interpreter the wiring names, if it is no longer there to run."""
+    command = wired_interpreter(wiring)
+    if not command:
         return None
-    command = match.group(1)
     # Only an absolute path can be judged from here. A bare name is resolved
     # against the PATH of whatever shell Claude Code renders with, which is not
     # necessarily this one, and a wrong warning is worse than no warning.
     if not os.path.isabs(command):
         return None
     return None if os.path.isfile(command) else command
+
+
+def wrong_shell_form(cfg: str) -> bool:
+    """Windows only: the wired command suits a shell that will not run it.
+
+    Claude Code renders the status line through Git Bash when Git Bash is
+    installed and through PowerShell when it is not, and the installer writes the
+    command for whichever was there at the time. Installing or removing Git after
+    that flips the shell under a command written for the other one, and a command
+    the shell cannot parse hides the entire status bar.
+    """
+    if os.name != "nt":
+        return False
+    for name in ("settings.json", "settings.local.json"):
+        settings = load_settings(os.path.join(cfg, name))
+        command = settings.get("statusLine")
+        command = command.get("command", "") if isinstance(command, dict) else ""
+        if not isinstance(command, str) or not any(n in command for n in BADGE_NAMES):
+            continue
+        bash = bool(git_bash())
+        if command.startswith("&") and bash:
+            return True
+        if command.startswith('"') and not bash:
+            return True
+    return False
+
+
+def load_settings(path: str) -> dict:
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def main() -> int:
@@ -140,6 +193,17 @@ def main() -> int:
     # The wired command names an interpreter by absolute path. Python upgrades
     # move that path (Homebrew and pyenv carry the patch version in it), and a
     # command that cannot start exits non-zero, which hides the whole status bar.
+    if wrong_shell_form(cfg):
+        emit(
+            "The cc-token-statusline badge is wired in a form the shell that now renders it "
+            "cannot parse: Claude Code uses Git Bash on Windows when Git Bash is installed and "
+            "PowerShell when it is not, and installing or removing Git flips that under a "
+            "command written for the other shell. A statusLine command that fails to parse "
+            "hides the entire status bar, including any other badge. Offer to repair it by "
+            f"running: python '{installer}'"
+        )
+        return 0
+
     missing = missing_interpreter(wiring)
     if missing:
         emit(
