@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **`api` and `sub` are off by default.** Both are still implemented and both come
+  back by name through `CC_TOKENS_SEGMENTS`, alongside `cost`. The reason is the
+  same for all three: the badge exists to say whether you can keep going, and
+  time already spent waiting, a running total for finished subagent work and a
+  dollar figure that reads 0 on subscription plans do not answer that. The
+  default is now `ctx,quota,tok,cache,lines`.
+- **Fixed: the privacy page did not mention `quota.json`.** It has been written
+  since the previous entry and the page still described the cache as one file per
+  session. It also claimed nothing was ever pruned, which stopped being true in
+  0.4.1 when session files gained a 30-day sweep.
+
 - **Fixed: the quota countdown could belong to a window you were not reading.**
   Only one reset was shown, for whichever window was further along. With the 5h
   window at 40% and the 7d at 92% the badge printed a countdown measured in days

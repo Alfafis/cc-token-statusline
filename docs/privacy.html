@@ -33,13 +33,14 @@
   </ul>
 
   <h2>What the plugin stores</h2>
-  <p>One small file per session under <code>~/.claude/statusline-cache/</code> (or <code>$CLAUDE_CONFIG_DIR/statusline-cache/</code> when set), containing:</p>
+  <p>Everything lives under <code>~/.claude/statusline-cache/</code> (or <code>$CLAUDE_CONFIG_DIR/statusline-cache/</code> when set). One small file per session, containing:</p>
   <ul>
     <li>running token counters for the session;</li>
     <li>the byte offset already parsed in the transcript;</li>
     <li>the request identifiers already counted, so a request is not counted twice.</li>
   </ul>
-  <p>No prompt text, no responses, no file contents, no credentials. The files stay on your disk until you remove them, and nothing prunes them automatically. To delete everything the plugin has ever written:</p>
+  <p>Plus a single <code>quota.json</code>, shared by every session, holding the last account rate limit reading seen — the two percentages and their reset timestamps — so <code>/token-report</code> can show them. Claude Code sends those numbers on the status line's stdin and nowhere else, so a report run from a terminal has no other source.</p>
+  <p>No prompt text, no responses, no file contents, no credentials. Session files are deleted once they go 30 days untouched; <code>quota.json</code> is kept, since it is a single file that is overwritten rather than accumulated. To delete everything the plugin has ever written:</p>
 <pre>rm -rf ~/.claude/statusline-cache/</pre>
   <p><code>install.sh</code>, when you run it, also copies two scripts into <code>~/.claude/hooks/</code> and adds a <code>statusLine</code> entry to your <code>settings.json</code>, backing up every file it edits. That is a one-time action you invoke; nothing else writes outside the cache directory.</p>
 

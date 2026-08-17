@@ -228,15 +228,23 @@ def suite(work: str) -> int:
 
     out = badge(payload(FIXTURE, session="r1"))
     contains("wrapped in one bracket", "[ctx 93k/1M 9% \u00b7", out)
-    contains("ends with bracket", "api 1m12s]", out)
+    contains("ends with bracket", "+230/-14]", out)
     # One minute short of the payload's 2.2h on purpose: the countdown truncates
     # the partial minute rather than round a reset further out than it is.
     contains("quota shows both windows", "quota 5h 34% ~2h11m \u2502 7d 12%", out)
     check("only the 5h window counts down while 7d is low", 1, out.count("~"))
     lacks("cost is off by default", "1.23", out)
+    lacks("api is off by default", "api ", out)
+    lacks("sub is off by default", "sub ", out)
 
+    # Off the default list is not the same as gone: all three still render when
+    # asked for by name, which is the only thing that makes the default reversible.
     out = badge(payload(FIXTURE, session="r1b"), CC_TOKENS_SEGMENTS="ctx,cost")
     contains("cost still available on request", "$1.23", out)
+
+    out = badge(payload(FIXTURE, session="r1c"), CC_TOKENS_SEGMENTS="ctx,api,sub")
+    contains("api still available on request", "api 1m12s", out)
+    contains("sub still available on request", "sub 578", out)
 
     out = badge(payload(FIXTURE, used=780000, pct=78, pct5=41, pct7=82, session="r2",
                         reset7_hours=76))
@@ -248,7 +256,7 @@ def suite(work: str) -> int:
 
     out = badge(payload(FIXTURE, session="r4"), width="46")
     contains("narrow keeps context first", "[ctx 93k/1M 9%", out)
-    lacks("narrow drops api", "api", out)
+    lacks("narrow drops the line counts", "+230", out)
     check("narrow respects width", True, len(out) <= 46)
 
     out = badge(payload(FIXTURE, session="r5"), CC_TOKENS_SEGMENTS="ctx,limits")
@@ -278,7 +286,7 @@ def suite(work: str) -> int:
         wide, narrow = sized("400", "w_wide"), sized("46", "w_narrow")
         check("a wide terminal keeps more of the badge", True, len(wide) > len(narrow))
         check("a narrow terminal is still respected", True, len(narrow) <= 46)
-        contains("width comes from the environment, not the pipe", "api ", wide)
+        contains("width comes from the environment, not the pipe", "cache ", wide)
 
     print("quota")
 
