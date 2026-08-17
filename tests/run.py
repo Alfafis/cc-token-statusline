@@ -589,7 +589,7 @@ def suite(work: str) -> int:
         # Git Bash is that same command behind the call operator - and the bare
         # form, which is what a path with no space gets on either shell.
         ps_forms = [("with the call operator", "& " + spaced_command, shell_env)]
-        if " " not in command:
+        if not command.startswith(('"', "&")):
             ps_forms.append(("unquoted", command, dict(
                 os.environ, CLAUDE_CONFIG_DIR=inst_dir, NO_COLOR="1", CC_TOKENS_WIDTH="400")))
         for label, ps_command, env in ps_forms:
