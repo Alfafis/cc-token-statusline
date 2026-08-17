@@ -15,10 +15,10 @@ needs attention instead of reading the same at 9% and at 82%.
 | `quota` | `quota` | account rate limits, 5h and 7d windows | payload |
 | `tok` | `spent` | cumulative billed input / output tokens for the session | transcript |
 | `cache` | `cache` | share of billed input served from cache — higher is better | transcript |
-| `sub` | `sub` | tokens spent by subagents (sidechain entries) | transcript |
 | `lines` | `+ -` | lines added / removed | payload |
-| `api` | `api` | time spent waiting on the API | payload |
-| `cost` | `$` | session cost — **off by default**, see below | payload |
+| `sub` | `sub` | tokens spent by subagents (sidechain entries) — **off by default** | transcript |
+| `api` | `api` | time spent waiting on the API — **off by default** | payload |
+| `cost` | `$` | session cost — **off by default** | payload |
 
 Keys are the stable identifiers used in `CC_TOKENS_SEGMENTS`; labels are only
 what gets printed, and they are translated — `CC_TOKENS_LANG=pt` renders `token`,
@@ -44,9 +44,22 @@ ceiling.
 The segment disappears entirely when the payload carries no `rate_limits`
 (API-key accounts do not have them).
 
-`cost` is off by default. It reports 0 on subscription plans in some setups, and
-the columns it takes are better spent on both quota windows — the quota is what
-actually limits the day. Turn it on with `CC_TOKENS_SEGMENTS`.
+Three segments are off by default, for one shared reason: the badge is there to
+tell you whether you can keep going, and none of them answers that.
+
+- `cost` reports 0 on subscription plans in some setups, and the columns it takes
+  are better spent on both quota windows — the quota is what actually limits the
+  day.
+- `api` is time already spent waiting. Nothing you do next changes it.
+- `sub` is a running total for work that already happened, and the badge cannot
+  say whether it was worth the tokens.
+
+None of them is gone — name any of them in `CC_TOKENS_SEGMENTS` and it comes
+back, in the order you list:
+
+```
+CC_TOKENS_SEGMENTS=ctx,quota,tok,cache,sub,lines,api
+```
 
 ## Install
 
@@ -118,7 +131,7 @@ All via environment variables (settable in the `env` block of `settings.json`):
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `CC_TOKENS_LANG` | `en` | label language: `en` or `pt`. Unknown values fall back to `en`. |
-| `CC_TOKENS_SEGMENTS` | `ctx,quota,tok,cache,sub,lines,api` | which segments, in order. Add `cost` for the dollar figure. |
+| `CC_TOKENS_SEGMENTS` | `ctx,quota,tok,cache,lines` | which segments, in order. Add `cost`, `sub` or `api` to get them back. |
 | `CC_TOKENS_WIDTH` | terminal width − reserve | hard cap on badge width |
 | `CC_TOKENS_RESERVE` | `34` | columns left for other badges |
 | `CC_TOKENS_COLOR` | `1` | `0` disables color (`NO_COLOR` works too) |
@@ -128,7 +141,8 @@ All via environment variables (settable in the `env` block of `settings.json`):
 | `CC_TOKENS_CHAIN_SHELL` | autodetected | shell used for a wrapped command: `bash`, `powershell` or `cmd` |
 | `CC_TOKENS_DEBUG` | unset | raise errors instead of printing nothing |
 
-When the badge does not fit, segments are dropped in this order:
+When the badge does not fit, segments are dropped in this order — the
+off-by-default names included, since turning one on does not spare it:
 
 ```
 api → lines → sub → tok → cache → cost → quota → ctx

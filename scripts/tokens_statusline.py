@@ -54,16 +54,23 @@ QUOTA_CACHE_NAME = "quota.json"
 # this the file would be rewritten hundreds of times to record the same numbers.
 QUOTA_CACHE_MIN_INTERVAL = 60.0
 
-# `cost` is implemented but off by default: on subscription plans it reports 0,
-# and the columns it costs buy both quota windows instead - the quota is what
-# actually limits the day. Add it back through CC_TOKENS_SEGMENTS.
-DEFAULT_SEGMENTS = ("ctx", "quota", "tok", "cache", "sub", "lines", "api")
-ALL_SEGMENTS = DEFAULT_SEGMENTS + ("cost",)
+# Three segments are implemented but off by default, all for the same reason:
+# they answer a question the badge is not there to answer. `cost` reports 0 on
+# subscription plans, and the columns it takes buy both quota windows instead -
+# the quota is what actually limits the day. `api` measures time already spent
+# waiting, which no longer changes anything you do. `sub` is a running total for
+# work that already happened, and the badge cannot say whether it was worth it.
+#
+# All three come back through CC_TOKENS_SEGMENTS, by name, in any order.
+DEFAULT_SEGMENTS = ("ctx", "quota", "tok", "cache", "lines")
+ALL_SEGMENTS = DEFAULT_SEGMENTS + ("cost", "sub", "api")
 SEGMENT_ALIASES = {"limits": "quota"}
 
 # Dropped in this order when the badge does not fit. `cache` outranks `tok`
 # because a hit rate is actionable and a running total is just a scoreboard;
-# `ctx` and `quota` answer "can I keep going", so they die last.
+# `ctx` and `quota` answer "can I keep going", so they die last. The three
+# off-by-default names stay listed: turned on through CC_TOKENS_SEGMENTS they
+# still have to yield to the ones that answer whether you can keep going.
 SEGMENT_PRIORITY = ("api", "lines", "sub", "tok", "cache", "cost", "quota", "ctx")
 
 # Below this, the reset time is not worth the width it costs.

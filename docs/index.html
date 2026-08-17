@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>cc-token-statusline</title>
-<meta name="description" content="Claude Code status line badge: context window usage, 5h/7d account quota, cumulative tokens, cache hit rate and subagent token spend.">
+<meta name="description" content="Claude Code status line badge: context window usage, 5h/7d account quota with reset countdowns, cumulative tokens, cache hit rate and edited lines.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>▇</text></svg>">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -12,7 +12,7 @@
 <main>
 
   <h1>cc-token-statusline</h1>
-  <p class="lede">A Claude Code status line badge for what a session is actually costing — context window, account quota, cache hit rate and subagent token spend.</p>
+  <p class="lede">A Claude Code status line badge for what a session is actually costing — context window, account quota with reset countdowns, cumulative tokens and cache hit rate.</p>
 
   <div class="links">
     <a href="https://github.com/Alfafis/cc-token-statusline">Source</a>
@@ -39,12 +39,13 @@
     <tr><td><code>quota</code></td><td>Both account rate limit windows, 5h and 7d</td><td>Account-wide, not per session. Each window carries its own countdown, so a reset is never read against the wrong clock. The 5h one is always shown — it is the window that stops the session you are in; the 7d one appears once it passes 70%.</td></tr>
     <tr><td><code>spent</code></td><td>Cumulative billed input and output for the session</td><td>Consumption since the start, as opposed to the occupancy <code>ctx</code> measures.</td></tr>
     <tr><td><code>cache</code></td><td>Share of billed input served from cache</td><td>Higher is better. A rate falling through a long session means something large and unstable near the top of the prompt is invalidating the cache each round.</td></tr>
-    <tr><td><code>sub</code></td><td>Tokens spent by subagents</td><td>Fan-out is one line to trigger and its cost appears nowhere else in the interface.</td></tr>
-    <tr><td><code>api</code></td><td>Time spent waiting on the API</td><td>Separated from wall clock, so a slow session can be blamed on the model or on your own tooling.</td></tr>
+    <tr><td><code>lines</code></td><td>Lines added and removed</td><td>The size of what was actually changed, next to what it cost to change it.</td></tr>
   </table>
 
+  <p>Three more are implemented and off by default, because the badge is there to say whether you can keep going and none of them answers that: <code>cost</code> (reports 0 on subscription plans in some setups), <code>api</code> (time already spent waiting — nothing you do next changes it) and <code>sub</code> (a running total for work that already happened). Name any of them in <code>CC_TOKENS_SEGMENTS</code> and it comes back.</p>
+
   <h2>How the numbers are obtained</h2>
-  <p>Context, quota, edited lines and API time arrive in the status line JSON payload. Cumulative tokens, cache hit rate and subagent spend do not, so the session transcript is parsed. Two details decide whether that is correct and cheap:</p>
+  <p>Context, quota and edited lines arrive in the status line JSON payload. Cumulative tokens and cache hit rate do not, so the session transcript is parsed. Two details decide whether that is correct and cheap:</p>
   <ul>
     <li><strong>Deduplication.</strong> Assistant entries repeat once per streamed content block, each copy carrying the full <code>usage</code> object. Summing them blindly overcounts by 2–3×. Every request is counted once, keyed by <code>requestId</code>.</li>
     <li><strong>Incremental reads.</strong> The status line re-renders constantly, so the parse resumes: byte offset and running totals are cached per session, and only new bytes are read. A trailing partial line is left for the next run, because Claude Code appends to that file while the badge renders.</li>
@@ -59,20 +60,20 @@
   <table>
     <tr><th>Variable</th><th>Default</th><th>Effect</th></tr>
     <tr><td><code>CC_TOKENS_LANG</code></td><td><code>en</code></td><td>Label language: <code>en</code> or <code>pt</code>. Segment keys never change with it.</td></tr>
-    <tr><td><code>CC_TOKENS_SEGMENTS</code></td><td><code>ctx,quota,tok,cache,sub,lines,api</code></td><td>Which segments, in order. Add <code>cost</code> for the dollar figure.</td></tr>
+    <tr><td><code>CC_TOKENS_SEGMENTS</code></td><td><code>ctx,quota,tok,cache,lines</code></td><td>Which segments, in order. Add <code>cost</code>, <code>sub</code> or <code>api</code> to get them back.</td></tr>
     <tr><td><code>CC_TOKENS_WIDTH</code></td><td>terminal width − reserve</td><td>Hard cap on badge width. Worth pinning: stdout is a pipe, so terminal size has to be guessed.</td></tr>
     <tr><td><code>CC_TOKENS_RESERVE</code></td><td><code>34</code></td><td>Columns left for other badges sharing the line.</td></tr>
     <tr><td><code>CC_TOKENS_COLOR</code></td><td><code>1</code></td><td><code>0</code> disables color. <code>NO_COLOR</code> works too.</td></tr>
     <tr><td><code>CC_TOKENS_ASCII</code></td><td>unset</td><td><code>1</code> forces ASCII glyphs. Applied automatically on consoles that cannot encode the originals.</td></tr>
   </table>
-  <p>When the badge does not fit, segments are dropped in a fixed order: <code>api → lines → sub → spent → cache → cost → quota → ctx</code>. Cache outranks the running total on purpose — a hit rate is actionable, a scoreboard is not.</p>
+  <p>When the badge does not fit, segments are dropped in a fixed order — the off-by-default names included, since turning one on does not spare it: <code>api → lines → sub → spent → cache → cost → quota → ctx</code>. Cache outranks the running total on purpose — a hit rate is actionable, a scoreboard is not.</p>
 
   <h2>Footprint</h2>
   <ul>
     <li>No network access, no MCP server, no credentials.</li>
-    <li>Reads the local session transcript; writes token counters to <code>~/.claude/statusline-cache/</code>. No prompt or response content is stored.</li>
+    <li>Reads the local session transcript; writes token counters and the last quota reading to <code>~/.claude/statusline-cache/</code>. No prompt or response content is stored.</li>
     <li>python3 standard library only, no third-party dependencies. No shell in the runtime path, so it behaves the same on Windows.</li>
-    <li>83 tests on Linux, macOS and Windows in CI, plus <code>claude plugin validate --strict</code> on both manifests.</li>
+    <li>132 tests on Linux and macOS, 137 on Windows, all three in CI, plus <code>claude plugin validate --strict</code> on both manifests.</li>
   </ul>
 
   <footer>
