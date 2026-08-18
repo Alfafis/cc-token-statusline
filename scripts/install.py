@@ -39,6 +39,7 @@ from statusline_chain import git_bash  # noqa: E402  (needs HERE on the path fir
 BADGE = "tokens_statusline.py"
 CHAIN = "statusline_chain.py"
 CHAIN_CONFIG = "cc-token-statusline-chain.json"
+VERSION_STAMP = "cc-token-statusline-installed.json"
 LEGACY_BADGE = "tokens-statusline.sh"
 BADGE_NAMES = (BADGE, CHAIN, LEGACY_BADGE)
 COMMAND_TOKEN = re.compile(r'"([^"]*)"|(\S+)')
@@ -176,10 +177,41 @@ def runs_our_badge(command: str) -> bool:
     return False
 
 
+def plugin_version() -> str:
+    try:
+        with open(os.path.join(ROOT, ".claude-plugin", "plugin.json"), "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return ""
+    version = data.get("version") if isinstance(data, dict) else None
+    return version if isinstance(version, str) else ""
+
+
+def stamp_version(hooks: str) -> None:
+    """Record the version the copy came from, next to the copy.
+
+    Without it the SessionStart hook can only compare bytes, which says the two
+    differ and nothing about which is newer - so installing from a checkout ahead
+    of the plugin cache, the normal state right after a release, made the hook
+    advise a downgrade on every session.
+    """
+    version = plugin_version()
+    if not version:
+        return
+    path = os.path.join(hooks, VERSION_STAMP)
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump({"version": version}, handle, indent=2)
+    except OSError:
+        return
+    print(f"stamped:   {path} ({version})")
+
+
 def copy_badge(hooks: str) -> None:
     os.makedirs(hooks, exist_ok=True)
     shutil.copyfile(os.path.join(ROOT, "scripts", BADGE), os.path.join(hooks, BADGE))
     print(f"installed: {os.path.join(hooks, BADGE)}")
+    stamp_version(hooks)
 
 
 def chained_previous(hooks: str) -> str:
@@ -217,6 +249,7 @@ def install(cfg: str, replace: bool, dry_run: bool) -> int:
         if dry_run:
             print(f"would copy   {os.path.join(ROOT, 'scripts', BADGE)}")
             print(f"          -> {os.path.join(hooks, BADGE)}")
+            print(f"would stamp  {os.path.join(hooks, VERSION_STAMP)} ({plugin_version()})")
             print(f"would keep   {describe(existing_command)}, which already runs the badge")
             return 0
         copy_badge(hooks)
@@ -230,6 +263,7 @@ def install(cfg: str, replace: bool, dry_run: bool) -> int:
     if dry_run:
         print(f"would copy   {os.path.join(ROOT, 'scripts', BADGE)}")
         print(f"          -> {os.path.join(hooks, BADGE)}")
+        print(f"would stamp  {os.path.join(hooks, VERSION_STAMP)} ({plugin_version()})")
         if chaining:
             kept = existing_command if fresh_chain else wrapped
             print(f"would keep   {describe(kept)} and append the badge after it")
@@ -306,7 +340,7 @@ def uninstall(cfg: str, dry_run: bool) -> int:
     settings.pop("_ccTokenStatuslinePrevious", None)
     save_settings(settings_path, settings)
 
-    for name in (BADGE, CHAIN, CHAIN_CONFIG, LEGACY_BADGE):
+    for name in (BADGE, CHAIN, CHAIN_CONFIG, VERSION_STAMP, LEGACY_BADGE):
         path = os.path.join(cfg, "hooks", name)
         if os.path.isfile(path):
             os.remove(path)

@@ -451,11 +451,33 @@ def suite(work: str) -> int:
     shutil.copyfile(SCRIPT, os.path.join(hook_dir, "hooks", "tokens_statusline.py"))
     check("silent once wired and current", "", run_hook())
 
-    # `plugin update` refreshes the plugin but not the copy the badge runs.
-    with open(os.path.join(hook_dir, "hooks", "tokens_statusline.py"), "a", encoding="utf-8") as handle:
+    # `plugin update` refreshes the plugin but not the copy the badge runs. A copy
+    # installed before the version stamp existed can only be compared by bytes,
+    # which says the two differ and nothing about which one is newer.
+    copy = os.path.join(hook_dir, "hooks", "tokens_statusline.py")
+    stamp = os.path.join(hook_dir, "hooks", "cc-token-statusline-installed.json")
+    shipped = json.load(open(os.path.join(ROOT, ".claude-plugin", "plugin.json"),
+                             encoding="utf-8"))["version"]
+    with open(copy, "a", encoding="utf-8") as handle:
         handle.write("# stale\n")
-    contains("warns when the installed copy drifts", "was updated but the copy", run_hook())
-    shutil.copyfile(SCRIPT, os.path.join(hook_dir, "hooks", "tokens_statusline.py"))
+    out = run_hook()
+    contains("warns when an unstamped copy differs", "no longer matches", out)
+    lacks("never says which unstamped copy is the old one", "still the old one", out)
+
+    # With a number on both sides the direction is knowable, and only one
+    # direction is worth a word. A copy ahead of the plugin is the normal state
+    # right after cutting a release: nudging there advises a downgrade, which is
+    # what comparing bytes alone used to do on every session.
+    def stamped(version):
+        with open(stamp, "w", encoding="utf-8") as handle:
+            json.dump({"version": version}, handle)
+        return run_hook()
+
+    contains("warns when the plugin is ahead of the copy", f"ships {shipped}", stamped("0.0.1"))
+    check("silent when the copy is ahead of the plugin", "", stamped("99.0.0"))
+    check("silent when both sides are the same version", "", stamped(shipped))
+    os.remove(stamp)
+    shutil.copyfile(SCRIPT, copy)
 
     # A python upgrade moves the interpreter the wiring names. The command then
     # cannot start, and a statusLine that exits non-zero hides the whole bar.
@@ -477,6 +499,12 @@ def suite(work: str) -> int:
     # exactly where it was needed.
     sys.path.insert(0, os.path.join(ROOT, "scripts"))
     import setup_check
+
+    # 0.10 follows 0.9, which string comparison gets backwards.
+    check("versions compare numerically, not lexically", True,
+          setup_check.version_tuple("0.10.0") > setup_check.version_tuple("0.9.9"))
+    check("a version missing its patch still compares", (1, 2, 0),
+          setup_check.version_tuple("1.2"))
 
     for form in (f'{gone} ~/.claude/hooks/tokens_statusline.py',
                  f'& "{gone}" "~/.claude/hooks/tokens_statusline.py"',
@@ -528,12 +556,16 @@ def suite(work: str) -> int:
 
     out, code = run_install("--dry-run")
     check("dry run changes nothing", False, os.path.exists(os.path.join(inst_dir, "settings.json")))
+    contains("dry run names the stamp it would write", "would stamp", out)
     check("dry run exits 0", 0, code)
 
     out, code = run_install()
     wired = json.load(open(os.path.join(inst_dir, "settings.json"), encoding="utf-8"))
     command = wired["statusLine"]["command"]
     check("installs the badge", True, os.path.isfile(os.path.join(inst_dir, "hooks", "tokens_statusline.py")))
+    check("stamps the version the copy came from", shipped,
+          json.load(open(os.path.join(inst_dir, "hooks", "cc-token-statusline-installed.json"),
+                         encoding="utf-8"))["version"])
     # The path is deliberately not sys.executable: a launcher on PATH outlives the
     # patch-versioned real binary that Homebrew and pyenv hand out.
     interpreter = wired_parts(command)[0]
@@ -771,6 +803,8 @@ def suite(work: str) -> int:
     check("uninstall drops its bookkeeping key", False, "_ccTokenStatuslinePrevious" in restored)
     check("uninstall removes the chain wrapper", False,
           os.path.exists(os.path.join(other, "hooks", "statusline_chain.py")))
+    check("uninstall removes the version stamp", False,
+          os.path.exists(os.path.join(other, "hooks", "cc-token-statusline-installed.json")))
 
     # --replace is the escape hatch for people who want the badge alone.
     replaced = os.path.join(work, "replacecfg")

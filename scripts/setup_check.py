@@ -8,8 +8,8 @@ silently does nothing.
 Three states are worth a word, and nothing else is:
 
   * not wired at all                  -> offer to run the installer;
-  * wired, but the installed copy is  -> offer to refresh it, because
-    older than the plugin's              `plugin update` does not reach it;
+  * wired, but the plugin ships a      -> offer to refresh it, because
+    newer badge than the copy runs         `plugin update` does not reach it;
   * wired through the bash entry      -> offer to rewire, because that path
     point on a machine without bash      exits non-zero and hides the whole
                                          status bar.
@@ -33,6 +33,7 @@ from statusline_chain import git_bash  # noqa: E402
 
 BADGE_NAMES = ("tokens-statusline.sh", "tokens_statusline.py", "statusline_chain.py")
 SKIP_MARKER = ".cc-token-statusline-skip"
+VERSION_STAMP = "cc-token-statusline-installed.json"
 BADGE_PATTERN = "|".join(re.escape(name) for name in BADGE_NAMES)
 
 
@@ -92,13 +93,39 @@ def find_wiring(cfg: str) -> str | None:
 
 
 def drifted_copy(installed: str, shipped: str) -> bool:
-    """True when a file we installed differs from the one the plugin ships."""
+    """True when a file we installed differs from the one the plugin ships.
+
+    Inequality only - which side is newer is not knowable from bytes, so this is
+    the fallback for a copy installed before the version stamp existed.
+    """
     try:
         if not (os.path.isfile(installed) and os.path.isfile(shipped)):
             return False
         return not filecmp.cmp(installed, shipped, shallow=False)
     except OSError:
         return False
+
+
+def version_tuple(text: str) -> tuple:
+    """`0.4.3` -> `(0, 4, 3)`, tolerating anything a version string may carry."""
+    parts = []
+    for chunk in str(text).split(".")[:3]:
+        digits = "".join(ch for ch in chunk if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts)
+
+
+def stamped_version(cfg: str) -> str:
+    """The version the installer recorded next to the copy it wrote."""
+    version = load_settings(os.path.join(cfg, "hooks", VERSION_STAMP)).get("version")
+    return version if isinstance(version, str) else ""
+
+
+def shipped_version(root: str) -> str:
+    version = load_settings(os.path.join(root, ".claude-plugin", "plugin.json")).get("version")
+    return version if isinstance(version, str) else ""
 
 
 def wired_interpreter(wiring: str) -> str | None:
@@ -236,16 +263,36 @@ def main() -> int:
     # every update. The trade is that `plugin update` never reaches the copy.
     # The wrapper is checked too - it is half of the install whenever the badge
     # sits behind somebody else's status line.
+    installed = stamped_version(cfg)
+    shipped = shipped_version(root)
+
+    # With a number on both sides the direction is knowable, and only one
+    # direction is worth a word. A copy ahead of the plugin is the normal state
+    # right after a release is cut, and equal numbers with different bytes is a
+    # local edit — nudging to overwrite either one would undo somebody's work.
+    if installed and shipped:
+        if version_tuple(shipped) > version_tuple(installed):
+            emit(
+                f"The cc-token-statusline plugin ships {shipped} but the copy running in the "
+                f"status line is {installed} — the badge runs from {cfg}/hooks, which plugin "
+                "updates do not touch. Offer to refresh it by running: "
+                f"python3 '{installer}' (python on Windows)."
+            )
+        return 0
+
     drifted = any(
         drifted_copy(os.path.join(cfg, "hooks", name), os.path.join(root, "scripts", name))
         for name in ("tokens_statusline.py", "statusline_chain.py")
     )
 
+    # No stamp on one of the sides, so the comparison is bytes and the message
+    # must not claim a direction it cannot see.
     if drifted:
         emit(
-            "The cc-token-statusline plugin was updated but the copy running in the status "
-            f"line is still the old one — the badge runs from {cfg}/hooks, which plugin "
-            "updates do not touch. Offer to refresh it by running: "
+            f"The cc-token-statusline badge runs from {cfg}/hooks, and that copy no longer "
+            "matches the one the plugin ships — plugin updates do not touch it. Which of the "
+            "two is newer cannot be told from here, because the copy was installed before "
+            "the version stamp existed. Offer to refresh it by running: "
             f"python3 '{installer}' (python on Windows)."
         )
     return 0
