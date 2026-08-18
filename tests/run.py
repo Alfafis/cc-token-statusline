@@ -650,14 +650,45 @@ def suite(work: str) -> int:
     if not shell:
         skip("chain through powershell", "no powershell on this platform")
     else:
-        # PowerShell takes seconds to start, well past the 2 second budget a
-        # wrapped command gets by default.
+        # PowerShell startup alone can outlast the default budget on a loaded
+        # runner even with the allowance the wrapper adds, and this case is about
+        # the shell being right, not about the clock - so it names its own number.
         wrap("Write-Output 'PREVIOUS_PS'")
         out, code = run_chain(other, CC_TOKENS_CHAIN_SHELL="powershell",
                               CC_TOKENS_CHAIN_TIMEOUT="60")
         check("chain through powershell exits 0", 0, code)
         contains("chain runs the wrapped command in PowerShell", "PREVIOUS_PS", out)
         contains("badge still follows it there", "ctx 93k/1M 9%", out)
+
+    # The timeout covers the interpreter's startup as well as the wrapped command.
+    # Under bash that is free; PowerShell spends a good part of a second before it
+    # reads the command, so charging the startup to the command's budget killed
+    # commands that had answered in time.
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    import statusline_chain
+
+    ps_argv = ["C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+               "-NoProfile", "-Command", "x"]
+    named = os.environ.pop("CC_TOKENS_CHAIN_TIMEOUT", None)
+    try:
+        check("a POSIX shell gets the plain budget", 2.0,
+              statusline_chain.timeout(["/bin/bash", "-c", "x"]))
+        check("no shell of our own gets the plain budget", 2.0,
+              statusline_chain.timeout(None))
+        check("powershell gets the startup allowance on top", 4.0,
+              statusline_chain.timeout(ps_argv))
+        check("pwsh counts as powershell", 4.0,
+              statusline_chain.timeout(["/usr/local/bin/pwsh", "-NoProfile", "-Command", "x"]))
+        os.environ["CC_TOKENS_CHAIN_TIMEOUT"] = "7.5"
+        check("a named budget is the whole budget", 7.5,
+              statusline_chain.timeout(ps_argv))
+        os.environ["CC_TOKENS_CHAIN_TIMEOUT"] = "not-a-number"
+        check("a budget that is not a number still gets the allowance", 4.0,
+              statusline_chain.timeout(ps_argv))
+    finally:
+        os.environ.pop("CC_TOKENS_CHAIN_TIMEOUT", None)
+        if named is not None:
+            os.environ["CC_TOKENS_CHAIN_TIMEOUT"] = named
 
     # Claude Code routes through PowerShell on a Windows box with no Git Bash, so
     # the command written into settings.json has to survive that parser too:

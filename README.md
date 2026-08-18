@@ -106,7 +106,10 @@ ccusage output here  [ctx 93k/1M 9% · quota 5h 34% │ 7d 12% · cache 99%]
 
 The wrapped command gets a 2 second timeout (`CC_TOKENS_CHAIN_TIMEOUT`) and its
 failures are swallowed, so a slow or broken third-party status line cannot take
-the badge — or the whole status bar — down with it.
+the badge — or the whole status bar — down with it. Under PowerShell the budget
+is 4 seconds: the timeout has to cover the interpreter starting up, which costs
+close to a second there and nothing under bash. Naming a number yourself sets
+the whole budget, allowance included.
 
 It also runs in the same shell Claude Code would have used: a POSIX shell on
 macOS and Linux, Git Bash on Windows when Git Bash is installed, PowerShell on
@@ -137,7 +140,7 @@ All via environment variables (settable in the `env` block of `settings.json`):
 | `CC_TOKENS_COLOR` | `1` | `0` disables color (`NO_COLOR` works too) |
 | `CC_TOKENS_ASCII` | unset | `1` forces ASCII glyphs (`|`, `^`, `v`) instead of `│ ↑ ↓` |
 | `CC_TOKENS_PYTHON` | autodetected | explicit python path, honored only by the legacy bash entry point |
-| `CC_TOKENS_CHAIN_TIMEOUT` | `2` | seconds allowed to a wrapped status line command |
+| `CC_TOKENS_CHAIN_TIMEOUT` | `2`, `4` under PowerShell | seconds allowed to a wrapped status line command, its interpreter's startup included |
 | `CC_TOKENS_CHAIN_SHELL` | autodetected | shell used for a wrapped command: `bash`, `powershell` or `cmd` |
 | `CC_TOKENS_DEBUG` | unset | raise errors instead of printing nothing |
 
