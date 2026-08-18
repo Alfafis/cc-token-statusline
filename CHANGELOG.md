@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: a wrapped status line could be killed for PowerShell's startup.** The
+  2 second budget was meant for the wrapped command, but the timeout covers the
+  interpreter starting up as well — free under bash, close to a second under
+  PowerShell even with `-NoProfile`. A third-party badge that answered in time
+  was cut off anyway and vanished from the bar, which is the outcome wrapping
+  exists to prevent. PowerShell now gets an allowance on top of the budget
+  instead of spending the budget on itself; `CC_TOKENS_CHAIN_TIMEOUT` still names
+  the whole budget when it is set.
+
 ## 0.4.3
 
 The quota segment now says which clock each countdown belongs to, and the default

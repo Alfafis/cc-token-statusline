@@ -13,7 +13,9 @@ the only input a status line command gets.
 Failure of the wrapped command is not allowed to matter: it gets a short timeout
 and its errors are swallowed, so a slow or broken third-party status line costs
 at most that timeout instead of taking the badge — or the whole status bar —
-down with it.
+down with it. The timeout also has to cover the interpreter's startup, which is
+free under bash and close to a second under PowerShell, so the PowerShell branch
+gets an allowance on top of the budget rather than spending the budget on it.
 """
 
 from __future__ import annotations
@@ -27,6 +29,14 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG = os.path.join(HERE, "cc-token-statusline-chain.json")
 DEFAULT_TIMEOUT = 2.0
+
+# The budget above is meant for the wrapped command, but the timeout covers the
+# interpreter's own startup too. Under bash that costs milliseconds; PowerShell
+# spends a good part of a second before it reads the command at all, even with
+# `-NoProfile`, so a command that answers instantly could still be killed for
+# being late. The allowance pays for the startup instead of taking it out of the
+# command's share.
+POWERSHELL_STARTUP_ALLOWANCE = 2.0
 SHELL_VAR = "CC_TOKENS_CHAIN_SHELL"
 
 # Where Git for Windows puts bash.exe. `C:\Windows\System32\bash.exe` is the WSL
@@ -40,13 +50,34 @@ GIT_BASH_PATHS = (
 sys.path.insert(0, HERE)
 
 
-def timeout() -> float:
+def is_powershell(argv) -> bool:
+    """True when argv runs PowerShell, judged without asking the host platform.
+
+    `os.path.basename` splits on `\\` only on Windows, and a Windows interpreter
+    path has to be recognised wherever the suite runs it.
+    """
+    if not argv:
+        return False
+    name = argv[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return name.split(".")[0] in ("powershell", "pwsh")
+
+
+def timeout(argv=None) -> float:
+    """Seconds the wrapped command gets, startup of its interpreter included.
+
+    An explicit `CC_TOKENS_CHAIN_TIMEOUT` is the whole budget and gets no
+    allowance added: someone who names a number means that number.
+    """
     raw = os.environ.get("CC_TOKENS_CHAIN_TIMEOUT", "")
     try:
         value = float(raw)
     except ValueError:
-        return DEFAULT_TIMEOUT
-    return value if value > 0 else DEFAULT_TIMEOUT
+        value = 0.0
+    if value > 0:
+        return value
+    if is_powershell(argv):
+        return DEFAULT_TIMEOUT + POWERSHELL_STARTUP_ALLOWANCE
+    return DEFAULT_TIMEOUT
 
 
 def git_bash() -> str:
@@ -131,7 +162,7 @@ def run_previous(command: str, payload: str) -> str:
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=timeout(),
+            timeout=timeout(argv),
         )
     except Exception:
         return ""
