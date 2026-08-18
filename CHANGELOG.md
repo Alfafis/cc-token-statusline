@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.5
+
+The badge stopped reporting on what already happened. Two segments remain by
+default, both answering whether there is room to keep going, and the transcript
+is no longer read to draw them.
 
 - **The default badge is `ctx,quota` and nothing else.** `tok`, `cache` and
   `lines` join `cost`, `sub` and `api`: implemented, off, and back by name through
