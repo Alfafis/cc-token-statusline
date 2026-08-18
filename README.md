@@ -13,9 +13,9 @@ needs attention instead of reading the same at 9% and at 82%.
 | --- | --- | --- | --- |
 | `ctx` | `ctx` | context window used / size, colored by pressure | payload |
 | `quota` | `quota` | account rate limits, 5h and 7d windows | payload |
-| `tok` | `spent` | cumulative billed input / output tokens for the session | transcript |
-| `cache` | `cache` | share of billed input served from cache — higher is better | transcript |
-| `lines` | `+ -` | lines added / removed | payload |
+| `tok` | `spent` | cumulative billed input / output tokens for the session — **off by default** | transcript |
+| `cache` | `cache` | share of billed input served from cache, higher is better — **off by default** | transcript |
+| `lines` | `+ -` | lines added / removed — **off by default** | payload |
 | `sub` | `sub` | tokens spent by subagents (sidechain entries) — **off by default** | transcript |
 | `api` | `api` | time spent waiting on the API — **off by default** | payload |
 | `cost` | `$` | session cost — **off by default** | payload |
@@ -38,14 +38,15 @@ days away costs columns to say nothing you can act on until it becomes the real
 ceiling.
 
 ```
-[ctx 780k/1M 78% · quota 5h 41% ~2h11m │ 7d 82% ~3d03h · spent ↑2.4M ↓33k]
+[ctx 780k/1M 78% · quota 5h 41% ~2h11m │ 7d 82% ~3d03h]
 ```
 
 The segment disappears entirely when the payload carries no `rate_limits`
 (API-key accounts do not have them).
 
-Three segments are off by default, for one shared reason: the badge is there to
-tell you whether you can keep going, and none of them answers that.
+The default is `ctx,quota` and nothing else, for one shared reason: the badge is
+there to tell you whether you can keep going, and those are the two that answer
+it. Everything else is off.
 
 - `cost` reports 0 on subscription plans in some setups, and the columns it takes
   are better spent on both quota windows — the quota is what actually limits the
@@ -53,6 +54,16 @@ tell you whether you can keep going, and none of them answers that.
 - `api` is time already spent waiting. Nothing you do next changes it.
 - `sub` is a running total for work that already happened, and the badge cannot
   say whether it was worth the tokens.
+- `tok` is that same scoreboard for the session as a whole.
+- `cache` is a hit rate nothing in the session acts on. It is worth reading when
+  you are hunting a cache-invalidating prompt, which is what `--report` is for.
+- `lines` counts edits already made, which `git diff --stat` answers better and
+  without spending columns on every render.
+
+There is a second, smaller reason to leave `tok`, `cache` and `sub` off: they are
+the only segments read from the transcript, so a badge without them never opens it
+and never writes a session cache. `ctx`, `quota` and `lines` all come from the
+payload Claude Code already hands over.
 
 None of them is gone — name any of them in `CC_TOKENS_SEGMENTS` and it comes
 back, in the order you list:
@@ -104,7 +115,7 @@ wrapped rather than replaced: it runs first, with the same payload on stdin, and
 the badge is appended to whatever it prints.
 
 ```
-ccusage output here  [ctx 93k/1M 9% · quota 5h 34% │ 7d 12% · cache 99%]
+ccusage output here  [ctx 93k/1M 9% · quota 5h 34% ~2h11m │ 7d 12%]
 ```
 
 The wrapped command gets a 2 second timeout (`CC_TOKENS_CHAIN_TIMEOUT`) and its
@@ -137,7 +148,7 @@ All via environment variables (settable in the `env` block of `settings.json`):
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `CC_TOKENS_LANG` | `en` | label language: `en` or `pt`. Unknown values fall back to `en`. |
-| `CC_TOKENS_SEGMENTS` | `ctx,quota,tok,cache,lines` | which segments, in order. Add `cost`, `sub` or `api` to get them back. |
+| `CC_TOKENS_SEGMENTS` | `ctx,quota` | which segments, in order. Add `tok`, `cache`, `lines`, `cost`, `sub` or `api` to get them back. |
 | `CC_TOKENS_WIDTH` | terminal width − reserve | hard cap on badge width |
 | `CC_TOKENS_RESERVE` | `34` | columns left for other badges |
 | `CC_TOKENS_COLOR` | `1` | `0` disables color (`NO_COLOR` works too) |
@@ -147,8 +158,9 @@ All via environment variables (settable in the `env` block of `settings.json`):
 | `CC_TOKENS_CHAIN_SHELL` | autodetected | shell used for a wrapped command: `bash`, `powershell` or `cmd` |
 | `CC_TOKENS_DEBUG` | unset | raise errors instead of printing nothing |
 
-When the badge does not fit, segments are dropped in this order — the
-off-by-default names included, since turning one on does not spare it:
+When the badge does not fit, segments are dropped in this order. Turning a name
+on does not spare it, which is why the list covers every segment and not just the
+two defaults:
 
 ```
 api → lines → sub → tok → cache → cost → quota → ctx

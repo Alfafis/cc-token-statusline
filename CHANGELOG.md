@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- **The default badge is `ctx,quota` and nothing else.** `tok`, `cache` and
+  `lines` join `cost`, `sub` and `api`: implemented, off, and back by name through
+  `CC_TOKENS_SEGMENTS`. The criterion is the one the previous default already
+  claimed — the badge is there to say whether you can keep going — and a running
+  total, a hit rate and a count of edits already made do not answer that. The drop
+  order agreed before this change did: `lines` was the second segment to be
+  discarded on a narrow terminal while sitting in the default set, ahead of two
+  segments that had been removed for being scoreboards.
+- **The default badge no longer opens the transcript.** `tok`, `cache` and `sub`
+  are the only segments read from it, so an untouched install now renders from the
+  payload alone: no transcript parse on every keystroke and no session cache file.
+  Naming any of the three brings the parse back, cold start included.
+
 ## 0.4.4
 
 Two places where this plugin spent a budget that was not its to spend: a timeout

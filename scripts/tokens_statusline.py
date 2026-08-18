@@ -54,16 +54,20 @@ QUOTA_CACHE_NAME = "quota.json"
 # this the file would be rewritten hundreds of times to record the same numbers.
 QUOTA_CACHE_MIN_INTERVAL = 60.0
 
-# Three segments are implemented but off by default, all for the same reason:
-# they answer a question the badge is not there to answer. `cost` reports 0 on
-# subscription plans, and the columns it takes buy both quota windows instead -
-# the quota is what actually limits the day. `api` measures time already spent
-# waiting, which no longer changes anything you do. `sub` is a running total for
-# work that already happened, and the badge cannot say whether it was worth it.
+# The default is the two segments that answer "can I keep going": how full the
+# context window is and how much of the account quota is left. Everything else is
+# implemented and off, for one reason each - none of them changes what you do
+# next. `cost` reports 0 on subscription plans, and the columns it takes buy both
+# quota windows instead. `api` measures time already spent waiting. `sub` is a
+# running total for work that already happened. `tok` is the same scoreboard for
+# the session as a whole. `cache` is a hit rate nothing in the session acts on.
+# `lines` counts edits already made, which `git diff` answers better.
 #
-# All three come back through CC_TOKENS_SEGMENTS, by name, in any order.
-DEFAULT_SEGMENTS = ("ctx", "quota", "tok", "cache", "lines")
-ALL_SEGMENTS = DEFAULT_SEGMENTS + ("cost", "sub", "api")
+# All of them come back through CC_TOKENS_SEGMENTS, by name, in any order. The
+# drop order below is the reason this list is not just cosmetic: a name turned on
+# there still yields to the two that stay.
+DEFAULT_SEGMENTS = ("ctx", "quota")
+ALL_SEGMENTS = DEFAULT_SEGMENTS + ("tok", "cache", "lines", "cost", "sub", "api")
 SEGMENT_ALIASES = {"limits": "quota"}
 
 # Dropped in this order when the badge does not fit. `cache` outranks `tok`

@@ -111,8 +111,33 @@ def payload(transcript, used=93000, pct=9.3, pct5=34.0, pct7=12.0, session="test
     return json.dumps(out)
 
 
+# Most of the suite exercises the transcript accounting, and the badge only reads
+# the transcript when a segment asks for it - with the default set it never does.
+# These calls name the segments that do, so the accounting stays under test; the
+# default set is asserted on its own, in the segments block.
+TEST_SEGMENTS = "ctx,quota,tok,cache,lines"
+
+
 def badge(stdin: str, width="400", **env_extra) -> str:
-    env = dict(os.environ, NO_COLOR="1", CC_TOKENS_WIDTH=width, **env_extra)
+    env = dict(os.environ, NO_COLOR="1", CC_TOKENS_WIDTH=width,
+               CC_TOKENS_SEGMENTS=TEST_SEGMENTS)
+    env.update(env_extra)
+    proc = subprocess.run(
+        [sys.executable, SCRIPT],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=env,
+    )
+    return proc.stdout
+
+
+def badge_default(stdin: str, width="400", **env_extra) -> str:
+    """The badge as a fresh install renders it, with no segment list in the env."""
+    env = dict(os.environ, NO_COLOR="1", CC_TOKENS_WIDTH=width)
+    env.pop("CC_TOKENS_SEGMENTS", None)
+    env.update(env_extra)
     proc = subprocess.run(
         [sys.executable, SCRIPT],
         input=stdin,
@@ -233,18 +258,38 @@ def suite(work: str) -> int:
     # the partial minute rather than round a reset further out than it is.
     contains("quota shows both windows", "quota 5h 34% ~2h11m \u2502 7d 12%", out)
     check("only the 5h window counts down while 7d is low", 1, out.count("~"))
-    lacks("cost is off by default", "1.23", out)
-    lacks("api is off by default", "api ", out)
-    lacks("sub is off by default", "sub ", out)
+    lacks("a named set renders no cost it did not name", "1.23", out)
+    lacks("a named set renders no api it did not name", "api ", out)
+    lacks("a named set renders no sub it did not name", "sub ", out)
 
-    # Off the default list is not the same as gone: all three still render when
-    # asked for by name, which is the only thing that makes the default reversible.
+    # What a fresh install actually shows: the two segments that answer whether
+    # there is room to keep going. Everything else is implemented and off.
+    plain = badge_default(payload(FIXTURE, session="r1d"))
+    contains("default shows the context window", "ctx 93k/1M 9%", plain)
+    contains("default shows both quota windows", "quota 5h 34% ~2h11m \u2502 7d 12%", plain)
+    for name, needle in (("cost", "1.23"), ("api", "api "), ("sub", "sub "),
+                         ("spent", "spent "), ("cache", "cache "), ("lines", "+230")):
+        lacks(f"{name} is off by default", needle, plain)
+
+    # Nothing in the default set reads the transcript, so the default install
+    # stops parsing it on every keystroke - and writes no session cache at all.
+    check("the default set never touches the transcript", False,
+          os.path.exists(os.path.join(work, "claude", "statusline-cache", "tokens-r1d.json")))
+
+    # Off the default list is not the same as gone: every one of them still renders
+    # when asked for by name, which is the only thing that makes the default
+    # reversible.
     out = badge(payload(FIXTURE, session="r1b"), CC_TOKENS_SEGMENTS="ctx,cost")
     contains("cost still available on request", "$1.23", out)
 
     out = badge(payload(FIXTURE, session="r1c"), CC_TOKENS_SEGMENTS="ctx,api,sub")
     contains("api still available on request", "api 1m12s", out)
     contains("sub still available on request", "sub 578", out)
+
+    out = badge(payload(FIXTURE, session="r1e"), CC_TOKENS_SEGMENTS="tok,cache,lines")
+    contains("spent still available on request", "spent ", out)
+    contains("cache still available on request", "cache ", out)
+    contains("line counts still available on request", "+230/-14", out)
 
     out = badge(payload(FIXTURE, used=780000, pct=78, pct5=41, pct7=82, session="r2",
                         reset7_hours=76))
@@ -266,7 +311,10 @@ def suite(work: str) -> int:
     # and trimmed the badge to fit a terminal nobody was using. No descriptor is
     # a terminal here either, which is exactly when COLUMNS has to be believed.
     def sized(columns: str, session: str) -> str:
-        env = dict(os.environ, NO_COLOR="1", COLUMNS=columns, CC_TOKENS_RESERVE="0")
+        # Named segments, not the default set: this is about what width drops, and
+        # a two-segment default fits any width and would drop nothing.
+        env = dict(os.environ, NO_COLOR="1", COLUMNS=columns, CC_TOKENS_RESERVE="0",
+                   CC_TOKENS_SEGMENTS=TEST_SEGMENTS)
         env.pop("CC_TOKENS_WIDTH", None)
         proc = subprocess.run(
             [sys.executable, SCRIPT],
