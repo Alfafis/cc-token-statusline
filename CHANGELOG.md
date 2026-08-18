@@ -1,17 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.4.3
 
-- **`api` and `sub` are off by default.** Both are still implemented and both come
-  back by name through `CC_TOKENS_SEGMENTS`, alongside `cost`. The reason is the
-  same for all three: the badge exists to say whether you can keep going, and
-  time already spent waiting, a running total for finished subagent work and a
-  dollar figure that reads 0 on subscription plans do not answer that. The
-  default is now `ctx,quota,tok,cache,lines`.
-- **Fixed: the privacy page did not mention `quota.json`.** It has been written
-  since the previous entry and the page still described the cache as one file per
-  session. It also claimed nothing was ever pruned, which stopped being true in
-  0.4.1 when session files gained a 30-day sweep.
+The quota segment now says which clock each countdown belongs to, and the default
+bar carries only the numbers that answer whether you can keep going.
 
 - **Fixed: the quota countdown could belong to a window you were not reading.**
   Only one reset was shown, for whichever window was further along. With the 5h
@@ -29,6 +21,16 @@
   the quota off the bar. Percentages are a snapshot and the report dates them
   when they have aged; the countdowns are recomputed from the absolute
   `resets_at` and are always current.
+- **`api` and `sub` are off by default.** Both are still implemented and both come
+  back by name through `CC_TOKENS_SEGMENTS`, alongside `cost`. The reason is the
+  same for all three: the badge exists to say whether you can keep going, and
+  time already spent waiting, a running total for finished subagent work and a
+  dollar figure that reads 0 on subscription plans do not answer that. The
+  default is now `ctx,quota,tok,cache,lines`.
+- **Fixed: the privacy page did not mention `quota.json`.** It has been written
+  since the previous entry and the page still described the cache as one file per
+  session. It also claimed nothing was ever pruned, which stopped being true in
+  0.4.1 when session files gained a 30-day sweep.
 
 ## 0.4.2
 
