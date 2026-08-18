@@ -37,15 +37,17 @@
     <tr><th>Segment</th><th>Reads</th><th>Why it earns the space</th></tr>
     <tr><td><code>ctx</code></td><td>Context window used against the model's limit</td><td>The only value that goes down as well as up. Yellow at 60%, red at 85% — you see the wall before hitting it.</td></tr>
     <tr><td><code>quota</code></td><td>Both account rate limit windows, 5h and 7d</td><td>Account-wide, not per session. Each window carries its own countdown, so a reset is never read against the wrong clock. The 5h one is always shown — it is the window that stops the session you are in; the 7d one appears once it passes 70%.</td></tr>
-    <tr><td><code>spent</code></td><td>Cumulative billed input and output for the session</td><td>Consumption since the start, as opposed to the occupancy <code>ctx</code> measures.</td></tr>
-    <tr><td><code>cache</code></td><td>Share of billed input served from cache</td><td>Higher is better. A rate falling through a long session means something large and unstable near the top of the prompt is invalidating the cache each round.</td></tr>
-    <tr><td><code>lines</code></td><td>Lines added and removed</td><td>The size of what was actually changed, next to what it cost to change it.</td></tr>
+    <tr><td><code>spent</code> <em>(off by default)</em></td><td>Cumulative billed input and output for the session</td><td>Consumption since the start, as opposed to the occupancy <code>ctx</code> measures.</td></tr>
+    <tr><td><code>cache</code> <em>(off by default)</em></td><td>Share of billed input served from cache</td><td>Higher is better. A rate falling through a long session means something large and unstable near the top of the prompt is invalidating the cache each round.</td></tr>
+    <tr><td><code>lines</code> <em>(off by default)</em></td><td>Lines added and removed</td><td>The size of what was actually changed, next to what it cost to change it.</td></tr>
   </table>
 
-  <p>Three more are implemented and off by default, because the badge is there to say whether you can keep going and none of them answers that: <code>cost</code> (reports 0 on subscription plans in some setups), <code>api</code> (time already spent waiting — nothing you do next changes it) and <code>sub</code> (a running total for work that already happened). Name any of them in <code>CC_TOKENS_SEGMENTS</code> and it comes back.</p>
+  <p>Only the first two are on by default, because the badge is there to say whether you can keep going and only they answer that. <code>spent</code>, <code>cache</code> and <code>lines</code> are on the same footing as <code>cost</code> (reports 0 on subscription plans in some setups), <code>api</code> (time already spent waiting — nothing you do next changes it) and <code>sub</code> (a running total for work that already happened): all six are implemented and off. Name any of them in <code>CC_TOKENS_SEGMENTS</code> and it comes back.</p>
+
+  <p>There is a second reason to leave <code>spent</code>, <code>cache</code> and <code>sub</code> off: they are the only segments read from the transcript, so a badge without them never opens it and never writes a session cache. Everything the default set prints comes from the payload Claude Code already hands over.</p>
 
   <h2>How the numbers are obtained</h2>
-  <p>Context, quota and edited lines arrive in the status line JSON payload. Cumulative tokens and cache hit rate do not, so the session transcript is parsed. Two details decide whether that is correct and cheap:</p>
+  <p>Context, quota and edited lines arrive in the status line JSON payload. Cumulative tokens, cache hit rate and subagent spend do not, so the session transcript is parsed — but only when one of those three is asked for, which the default set never does. Two details decide whether that parse is correct and cheap:</p>
   <ul>
     <li><strong>Deduplication.</strong> Assistant entries repeat once per streamed content block, each copy carrying the full <code>usage</code> object. Summing them blindly overcounts by 2–3×. Every request is counted once, keyed by <code>requestId</code>.</li>
     <li><strong>Incremental reads.</strong> The status line re-renders constantly, so the parse resumes: byte offset and running totals are cached per session, and only new bytes are read. A trailing partial line is left for the next run, because Claude Code appends to that file while the badge renders.</li>
@@ -66,7 +68,7 @@
     <tr><td><code>CC_TOKENS_COLOR</code></td><td><code>1</code></td><td><code>0</code> disables color. <code>NO_COLOR</code> works too.</td></tr>
     <tr><td><code>CC_TOKENS_ASCII</code></td><td>unset</td><td><code>1</code> forces ASCII glyphs. Applied automatically on consoles that cannot encode the originals.</td></tr>
   </table>
-  <p>When the badge does not fit, segments are dropped in a fixed order — the off-by-default names included, since turning one on does not spare it: <code>api → lines → sub → spent → cache → cost → quota → ctx</code>. Cache outranks the running total on purpose — a hit rate is actionable, a scoreboard is not.</p>
+  <p>When the badge does not fit, segments are dropped in a fixed order: <code>api → lines → sub → spent → cache → cost → quota → ctx</code>. Turning a name on does not spare it from that order, which is why the list covers every segment and not just the two defaults. Cache outranks the running total on purpose — a hit rate is actionable, a scoreboard is not.</p>
 
   <h2>Footprint</h2>
   <ul>
