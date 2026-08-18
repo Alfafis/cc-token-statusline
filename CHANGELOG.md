@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.4
+
+Two places where this plugin spent a budget that was not its to spend: a timeout
+that charged PowerShell's startup to the wrapped command, and a staleness check
+that could not tell which copy was the newer one.
 
 - **Fixed: the SessionStart hook could advise a downgrade.** It decided whether the
   installed copy was stale by comparing bytes, which reports inequality and not
