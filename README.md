@@ -81,7 +81,10 @@ python3 scripts/install.py       # python scripts/install.py on Windows
 ```
 
 It copies the badge into `~/.claude/hooks` and points `statusLine` at it,
-backing up every file it edits.
+backing up every file it edits. It also records which version the copy came from,
+so the SessionStart hook can tell a plugin that is ahead of the copy — worth a
+refresh — from a copy that is ahead of the plugin, which is what a checkout looks
+like and needs no advice.
 
 The wired command names the interpreter by absolute path:
 

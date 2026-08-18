@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Fixed: the SessionStart hook could advise a downgrade.** It decided whether the
+  installed copy was stale by comparing bytes, which reports inequality and not
+  direction, and then said the copy was the old one. Installing from a checkout
+  ahead of the plugin cache — the normal state right after a release is cut — made
+  it nudge toward overwriting a current badge with an older one, every session.
+  The installer now records the version the copy came from in
+  `~/.claude/hooks/cc-token-statusline-installed.json`, and the hook speaks only
+  when the plugin is genuinely ahead. A copy predating the stamp still falls back
+  to the byte comparison, but the wording no longer claims a direction it cannot
+  see.
+- **Fixed: the privacy page under-reported what installing writes.** It said two
+  scripts and named `install.sh`, which has not been the installer for two
+  releases; the chain config and the new version stamp went unmentioned.
 - **Fixed: a wrapped status line could be killed for PowerShell's startup.** The
   2 second budget was meant for the wrapped command, but the timeout covers the
   interpreter starting up as well — free under bash, close to a second under
